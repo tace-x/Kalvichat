@@ -16,7 +16,7 @@ export default function AuthPage({initialMode='login',onAccountState}){
     }catch(reason){setError(reason.message);}finally{setBusy(false)}
   };
   return <div className="auth-page"><section className="auth-card glass" aria-labelledby="auth-title">
-    <div className="auth-brand"><div className="brand-mark">M</div><div><h1 id="auth-title">MALLU JAABI</h1><span>Private friends chat</span></div></div>
+    <div className="auth-brand"><div className="brand-mark">M</div><div><h1 id="auth-title">KALVI CHAT 🤍</h1><span>Private friends chat</span></div></div>
     <div className={`auth-switch ${mode}`} role="tablist" aria-label="Authentication mode"><span className="switch-glass"/>
       <button type="button" role="tab" aria-selected={mode==='login'} onClick={()=>switchMode('login')}>Login</button>
       <button type="button" role="tab" aria-selected={mode==='register'} onClick={()=>switchMode('register')}>Register</button>
