@@ -24,7 +24,7 @@ function Icon({name}) { const icons={sun:'☼',moon:'◐',down:'↓',back:'←',
 const Header=memo(function Header({theme,setTheme,anyoneOnline,onLogout}){
   return <header className="header glass">
     <div className="brand-mark" aria-hidden="true">M</div>
-    <div className="title-wrap"><h1>MALLU JAABI</h1><span className="handshake">🤝</span></div>
+    <div className="title-wrap"><h1>KALVI CHAT 🤍</h1><span className="handshake">🤝</span></div>
     <div className="header-actions">{anyoneOnline&&<span className="presence-dot" title="Friends are online" />}
       <button className="icon-button" aria-label={`Switch to ${theme==='light'?'dark':'light'} mode`} onClick={()=>setTheme(theme==='light'?'dark':'light')}><Icon name={theme==='light'?'moon':'sun'}/></button>
       {onLogout&&<button className="icon-button logout-icon" aria-label="Logout" onClick={onLogout}>↪</button>}
@@ -140,7 +140,7 @@ const Composer=memo(function Composer({onSend,reply,onCancelReply,editing,onCanc
 });
 
 function SessionState({status,error}){
-  return <div className="session-state"><div className="brand-mark">M</div><h1>MALLU JAABI</h1>{status==='loading'?<><span className="spinner"/><p>Verifying your session…</p></>:<p>{error||'Authentication is temporarily unavailable.'}</p>}</div>
+  return <div className="session-state"><div className="brand-mark">M</div><h1>KALVI CHAT 🤍</h1>{status==='loading'?<><span className="spinner"/><p>Verifying your session…</p></>:<p>{error||'Authentication is temporarily unavailable.'}</p>}</div>
 }
 
 function UserApp(){
