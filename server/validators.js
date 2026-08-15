@@ -1,8 +1,13 @@
 import crypto from 'node:crypto';
 
 export const LANGUAGES = ['Hinglish', 'Manglish'];
-export const AVATARS = ['panda', 'fox', 'penguin'];
+export const AVATARS = [
+  'panda', 'fox', 'penguin',
+  'bear', 'cat', 'turtle', 'owl', 'otter',
+  'rabbit', 'koala', 'seal', 'deer', 'capybara',
+];
 export const COLORS = [
+  // Existing IDs and values remain unchanged so established identities persist.
   { id: 'terracotta', value: '#C4613F' },
   { id: 'teal', value: '#2F7A68' },
   { id: 'indigo', value: '#5B68A6' },
@@ -11,6 +16,12 @@ export const COLORS = [
   { id: 'olive', value: '#74733D' },
   { id: 'aubergine', value: '#725B78' },
   { id: 'cyan', value: '#397987' },
+  // Additional premium families for stronger active-user differentiation.
+  { id: 'emerald', value: '#3E8B57' },
+  { id: 'blue', value: '#4B6FA8' },
+  { id: 'violet', value: '#7961A5' },
+  { id: 'rose', value: '#A65D72' },
+  { id: 'lime', value: '#718C42' },
 ];
 
 export function normalizeUsername(value) {
