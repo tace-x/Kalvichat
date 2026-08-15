@@ -1,0 +1,181 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function signedIn() { return request.auth != null; }
+    function memberPath(uid) { return /databases/$(database)/documents/members/$(uid); }
+    function ownMember() { return get(memberPath(request.auth.uid)); }
+    function activeMember() {
+      return signedIn() && exists(memberPath(request.auth.uid))
+        && ownMember().data.status == 'approved'
+        && ownMember().data.approved == true
+        && ownMember().data.banned != true
+        && ownMember().data.role != 'admin';
+    }
+    function canParticipate() {
+      return activeMember() && ownMember().data.muted != true;
+    }
+    function activeGeneration() {
+      return exists(/databases/$(database)/documents/system/chatState)
+        ? get(/databases/$(database)/documents/system/chatState).data.activeGeneration
+        : 1;
+    }
+    function validReply(reply) {
+      return reply == null || (reply is map
+        && reply.id is string
+        && reply.id.matches('^[A-Za-z0-9_-]{10,220}$')
+        && exists(/databases/$(database)/documents/chatMessages/$(reply.id))
+        && get(/databases/$(database)/documents/chatMessages/$(reply.id)).data.generation == activeGeneration()
+        && get(/databases/$(database)/documents/chatMessages/$(reply.id)).data.deleted != true
+        && reply.text == get(/databases/$(database)/documents/chatMessages/$(reply.id)).data.originalText);
+    }
+    function activeMessage(messageId) {
+      return exists(/databases/$(database)/documents/chatMessages/$(messageId))
+        && get(/databases/$(database)/documents/chatMessages/$(messageId)).data.generation == activeGeneration()
+        && get(/databases/$(database)/documents/chatMessages/$(messageId)).data.deleted != true;
+    }
+    function ownMessage() { return resource.data.senderId == request.auth.uid; }
+    function withinWindow() {
+      return resource.data.createdAt is timestamp
+        && request.time < resource.data.createdAt + duration.value(10, 'm');
+    }
+    function immutableMessageFields() {
+      return request.resource.data.senderId == resource.data.senderId
+        && request.resource.data.senderName == resource.data.senderName
+        && request.resource.data.senderColor == resource.data.senderColor
+        && request.resource.data.senderAvatar == resource.data.senderAvatar
+        && request.resource.data.generation == resource.data.generation
+        && resource.data.generation == activeGeneration()
+        && request.resource.data.createdAt == resource.data.createdAt
+        && request.resource.data.clientCreatedAt == resource.data.clientCreatedAt
+        && request.resource.data.replyTo == resource.data.replyTo
+        && request.resource.data.deletedByAdmin == resource.data.deletedByAdmin;
+    }
+
+    match /chatMessages/{messageId} {
+      allow read: if activeMember() && resource.data.generation == activeGeneration();
+      allow create: if canParticipate()
+        && request.resource.data.generation == activeGeneration()
+        && request.resource.data.senderId == request.auth.uid
+        && messageId.matches('^' + request.auth.uid + '_.*$')
+        && request.resource.data.senderName == ownMember().data.name
+        && request.resource.data.senderColor == ownMember().data.senderColor
+        && request.resource.data.senderAvatar == ownMember().data.avatar
+        && request.resource.data.originalText is string
+        && request.resource.data.originalText.size() > 0
+        && request.resource.data.originalText.size() <= 8000
+        && request.resource.data.detectedLanguage == 'pending'
+        && request.resource.data.translationStatus == 'pending'
+        && validReply(request.resource.data.replyTo)
+        && request.resource.data.createdAt == request.time
+        && request.resource.data.updatedAt == request.time
+        && request.resource.data.edited == false
+        && request.resource.data.deleted == false
+        && request.resource.data.deletedByAdmin == false
+        && request.resource.data.keys().hasOnly([
+          'senderId','senderName','senderColor','senderAvatar','generation','originalText',
+          'detectedLanguage','translationStatus','replyTo','clientCreatedAt',
+          'createdAt','updatedAt','edited','deleted','deletedByAdmin'
+        ]);
+
+      allow update: if canParticipate() && ownMessage() && withinWindow()
+        && immutableMessageFields()
+        && request.resource.data.updatedAt == request.time
+        && (
+          // User edit: generated translations are removed and server regenerates them.
+          (request.resource.data.originalText is string
+            && request.resource.data.originalText.size() > 0
+            && request.resource.data.originalText.size() <= 8000
+            && request.resource.data.edited == true
+            && request.resource.data.deleted == false
+            && request.resource.data.translationStatus == 'pending'
+            && request.resource.data.detectedLanguage == 'pending'
+            && !request.resource.data.keys().hasAny(['hinglishText','manglishText'])
+            && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+              'originalText','edited','editedAt','updatedAt','detectedLanguage',
+              'translationStatus','hinglishText','manglishText'
+            ]))
+          ||
+          // User delete: retain only an irreversible tombstone.
+          (!request.resource.data.keys().hasAny(['originalText','hinglishText','manglishText'])
+            && request.resource.data.deleted == true
+            && request.resource.data.deletedByAdmin == false
+            && request.resource.data.translationStatus == 'deleted'
+            && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+              'originalText','hinglishText','manglishText','deleted','deletedAt',
+              'updatedAt','translationStatus'
+            ]))
+        );
+      allow delete: if false;
+    }
+
+    match /chatReactions/{reactionId} {
+      allow read: if activeMember() && activeMessage(resource.data.messageId);
+      allow create, update: if canParticipate()
+        && request.resource.data.userId == request.auth.uid
+        && reactionId == request.resource.data.messageId + '_' + request.auth.uid
+        && request.resource.data.emoji in ['👍','❤️','😂','😮','😢','🔥','👏','🎉','😍']
+        && request.resource.data.updatedAt == request.time
+        && exists(/databases/$(database)/documents/chatMessages/$(request.resource.data.messageId))
+        && get(/databases/$(database)/documents/chatMessages/$(request.resource.data.messageId)).data.generation == activeGeneration()
+        && get(/databases/$(database)/documents/chatMessages/$(request.resource.data.messageId)).data.deleted != true;
+      allow delete: if canParticipate() && resource.data.userId == request.auth.uid && activeMessage(resource.data.messageId);
+    }
+
+    match /chatReadState/{userId} {
+      allow read: if activeMember();
+      allow create: if activeMember() && userId == request.auth.uid
+        && request.resource.data.userId == request.auth.uid
+        && request.resource.data.updatedAt == request.time
+        && (!request.resource.data.keys().hasAny(['readThrough']) || request.resource.data.readThrough <= request.time)
+        && request.resource.data.deliveredThrough <= request.time;
+      allow update: if activeMember() && userId == request.auth.uid
+        && request.resource.data.userId == request.auth.uid
+        && request.resource.data.updatedAt == request.time
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+          'userId','readThrough','deliveredThrough','updatedAt'
+        ])
+        && (!request.resource.data.keys().hasAny(['readThrough']) || request.resource.data.readThrough <= request.time)
+        && request.resource.data.deliveredThrough <= request.time;
+      allow delete: if false;
+    }
+
+    match /typing/{userId} {
+      allow read: if activeMember();
+      allow create, update: if canParticipate() && userId == request.auth.uid
+        && request.resource.data.userId == request.auth.uid
+        && request.resource.data.name == ownMember().data.name
+        && request.resource.data.expiresAt is timestamp
+        && request.resource.data.expiresAt <= request.time + duration.value(10, 's');
+      allow delete: if activeMember() && userId == request.auth.uid;
+    }
+
+    match /presence/{userId} {
+      allow read: if activeMember();
+      allow create, update: if canParticipate() && userId == request.auth.uid
+        && request.resource.data.userId == request.auth.uid
+        && request.resource.data.heartbeatAt == request.time;
+      allow delete: if false;
+    }
+
+    // Private account documents: browser can read only its own approval state.
+    match /members/{userId} {
+      allow read: if signedIn() && userId == request.auth.uid;
+      allow write: if false;
+    }
+    // Safe chat roster maintained by trusted approval/ban server operations.
+    match /chatMembers/{userId} {
+      allow read: if activeMember();
+      allow write: if false;
+    }
+    match /system/chatMeta {
+      allow read: if activeMember();
+      allow write: if false;
+    }
+    match /system/chatState {
+      allow read: if activeMember();
+      allow write: if false;
+    }
+    match /translationMemory/{entryId} { allow read, write: if false; }
+    match /{document=**} { allow read, write: if false; }
+  }
+}
