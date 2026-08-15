@@ -1,4 +1,4 @@
-# MALLU JAABI
+# KalviChat
 
 Private friends-only chat built with React, Vite, Firebase Authentication, Firestore, and Vercel server functions. It includes the production chat, username/password registration and login, approval states, and a separate server-authorized moderator panel at `/admin`.
 
