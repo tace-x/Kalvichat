@@ -1,6 +1,7 @@
 import crypto from 'node:crypto';
 import { FieldValue, Timestamp } from 'firebase-admin/firestore';
 import { getAdmin } from '../server/firebaseAdmin.js';
+import { ensureIdentityPool } from '../server/identityPool.js';
 import { AVATARS, COLORS, phoneReservationId, publicError, validateRegistration } from '../server/validators.js';
 
 const attempts = new Map();
@@ -20,12 +21,12 @@ export default async function handler(request, response) {
     rateLimit(request);
     const input = validateRegistration(request.body || {});
     const { auth, db } = getAdmin();
+    await ensureIdentityPool(db);
     const registrationRef = db.collection('registrations').doc();
     const usernameRef = db.doc(`usernameReservations/${input.username}`);
     const phoneId = phoneReservationId(input.phone);
     const phoneRef = db.doc(`phoneReservations/${phoneId}`);
     const assignmentsRef = db.doc('system/assignments');
-    const avatarId = AVATARS[crypto.randomInt(AVATARS.length)];
     const leaseUntil = Timestamp.fromMillis(Date.now() + 2 * 60_000);
 
     const selected = await db.runTransaction(async (transaction) => {
@@ -36,7 +37,13 @@ export default async function handler(request, response) {
         && (!snapshot.data().expiresAt || snapshot.data().expiresAt.toMillis() > Date.now());
       if (unavailable(usernameSnap)) throw Object.assign(new Error('That username is already in use.'), { status: 409, code: 'username-taken' });
       if (unavailable(phoneSnap)) throw Object.assign(new Error('That phone number is already registered.'), { status: 409, code: 'phone-taken' });
-      const counts = assignmentSnap.data()?.colorCounts || {};
+      const assignment = assignmentSnap.data() || {};
+      if (assignment.identityPoolVersion !== 1) throw Object.assign(new Error('Identity pool is not initialized.'), { status:503, code:'identity-pool-unavailable' });
+      const counts = assignment.colorCounts || {};
+      const avatarOwners = assignment.avatarOwners || {};
+      const availableAvatars = AVATARS.filter((id) => !avatarOwners[id]);
+      if (!availableAvatars.length) throw Object.assign(new Error('All profile avatars are currently assigned. Please contact the administrator.'), { status:409, code:'avatar-pool-exhausted' });
+      const avatarId = availableAvatars[crypto.randomInt(availableAvatars.length)];
       const minimum = Math.min(...COLORS.map((color) => Number(counts[color.id] || 0)));
       const choices = COLORS.filter((color) => Number(counts[color.id] || 0) === minimum);
       const color = choices[crypto.randomInt(choices.length)];
@@ -49,10 +56,14 @@ export default async function handler(request, response) {
         avatarId, avatar:`/avatars/${avatarId}.svg`, colorId:color.id, senderColor:color.value,
         status:'provisioning', createdAt:FieldValue.serverTimestamp(), updatedAt:FieldValue.serverTimestamp(),
       });
-      transaction.set(assignmentsRef, { colorCounts:{ ...counts, [color.id]:Number(counts[color.id] || 0)+1 } }, { merge:true });
-      return color;
+      transaction.set(assignmentsRef, {
+        identityPoolVersion:1,
+        avatarOwners:{ ...avatarOwners, [avatarId]:owner },
+        colorCounts:{ ...counts, [color.id]:Number(counts[color.id] || 0)+1 },
+      }, { merge:true });
+      return { color, avatarId };
     });
-    reservation = { registrationRef, usernameRef, phoneRef, assignmentsRef, colorId:selected.id };
+    reservation = { registrationRef, usernameRef, phoneRef, assignmentsRef, colorId:selected.color.id, avatarId:selected.avatarId };
 
     const internalEmail = `${registrationRef.id}@auth.mallu-jaabi.invalid`;
     authUser = await auth.createUser({ email:internalEmail, password:input.password, displayName:input.name, disabled:false });
@@ -61,7 +72,7 @@ export default async function handler(request, response) {
       if (usernameSnap.data()?.registrationId !== registrationRef.id || phoneSnap.data()?.registrationId !== registrationRef.id) throw new Error('Registration reservation expired.');
       const member = {
         name:input.name, username:input.username, phone:input.phone, language:input.language,
-        avatarId, avatar:`/avatars/${avatarId}.svg`, colorId:selected.id, senderColor:selected.value,
+        avatarId:selected.avatarId, avatar:`/avatars/${selected.avatarId}.svg`, colorId:selected.color.id, senderColor:selected.color.value,
         role:'user', status:'pending', approved:false, banned:false, muted:false,
         registrationId:registrationRef.id, createdAt:FieldValue.serverTimestamp(), updatedAt:FieldValue.serverTimestamp(),
       };
@@ -82,7 +93,9 @@ export default async function handler(request, response) {
         if (u.data()?.registrationId === reservation.registrationRef.id) transaction.delete(reservation.usernameRef);
         if (p.data()?.registrationId === reservation.registrationRef.id) transaction.delete(reservation.phoneRef);
         transaction.delete(reservation.registrationRef);
-        const counts=a.data()?.colorCounts||{}; transaction.set(reservation.assignmentsRef,{colorCounts:{...counts,[reservation.colorId]:Math.max(0,Number(counts[reservation.colorId]||1)-1)}},{merge:true});
+        const assignment=a.data()||{},counts=assignment.colorCounts||{},avatarOwners={...(assignment.avatarOwners||{})};
+        if(avatarOwners[reservation.avatarId]===reservation.registrationRef.id)delete avatarOwners[reservation.avatarId];
+        transaction.set(reservation.assignmentsRef,{identityPoolVersion:1,avatarOwners,colorCounts:{...counts,[reservation.colorId]:Math.max(0,Number(counts[reservation.colorId]||1)-1)}},{merge:true});
       }).catch(() => {});
     }
     const safe = publicError(error);

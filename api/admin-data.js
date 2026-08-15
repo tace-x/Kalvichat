@@ -26,7 +26,7 @@ export default async function handler(request,response){
       const rawCursor=String(request.query?.cursor||'');
       if(rawCursor){try{const cursor=JSON.parse(Buffer.from(rawCursor,'base64url').toString());messages=messages.startAfter(Timestamp.fromMillis(cursor.createdAt),cursor.id);}catch{throw Object.assign(new Error('Invalid pagination cursor.'),{status:400});}}
       const snapshot=await messages.get(),hasMore=snapshot.docs.length>20,docs=snapshot.docs.slice(0,20);
-      const items=docs.map((item)=>{const value=item.data();return{id:item.id,senderName:value.senderName,originalText:value.originalText||'',deleted:Boolean(value.deleted),deletedByAdmin:Boolean(value.deletedByAdmin),createdAt:iso(value.createdAt),generation:value.generation};});
+      const items=docs.map((item)=>{const value=item.data();return{id:item.id,senderName:value.senderName,senderAvatar:value.senderAvatar,senderColor:value.senderColor,originalText:value.originalText||'',deleted:Boolean(value.deleted),deletedByAdmin:Boolean(value.deletedByAdmin),createdAt:iso(value.createdAt),generation:value.generation};});
       const lastDoc=docs.at(-1),lastTime=lastDoc?.data()?.createdAt?.toMillis?.();
       const nextCursor=hasMore&&lastDoc&&lastTime?Buffer.from(JSON.stringify({createdAt:lastTime,id:lastDoc.id})).toString('base64url'):null;
       return response.status(200).json({items,nextCursor,generation});

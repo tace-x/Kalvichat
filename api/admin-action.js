@@ -1,6 +1,7 @@
 import { FieldValue } from 'firebase-admin/firestore';
 import { requireAdmin, requireSameOrigin } from '../server/adminSession.js';
 import { getAdmin } from '../server/firebaseAdmin.js';
+import { ensureIdentityPool } from '../server/identityPool.js';
 import { safeReason } from '../server/validators.js';
 
 const allowed=new Set(['approve','reject','mute','unmute','ban','unban','deleteMessage','clearChat']);
@@ -64,6 +65,7 @@ export default async function handler(request,response){
     }else if(action==='clearChat'){
       const generations=await clearChat(db,adminId);return response.status(200).json({success:true,...generations});
     }else if(action==='approve'||action==='reject'){
+      await ensureIdentityPool(db);
       const registrationRef=db.doc(`registrations/${targetId}`);
       await db.runTransaction(async(transaction)=>{
         const registrationSnap=await transaction.get(registrationRef),registration=registrationSnap.data();
@@ -83,8 +85,11 @@ export default async function handler(request,response){
           transaction.update(memberRef,{status:'rejected',approved:false,banned:false,muted:false,rejectedAt:FieldValue.serverTimestamp(),rejectionReason:reason||FieldValue.delete(),updatedAt:FieldValue.serverTimestamp()});
           if(usernameSnap.data()?.registrationId===targetId)transaction.set(usernameRef,{active:false,uid:registration.uid,registrationId:targetId,updatedAt:FieldValue.serverTimestamp()});
           if(phoneSnap.data()?.registrationId===targetId)transaction.set(phoneRef,{active:false,uid:registration.uid,registrationId:targetId,updatedAt:FieldValue.serverTimestamp()});
-          const counts=assignmentSnap.data()?.colorCounts||{};
-          transaction.set(assignmentsRef,{colorCounts:{...counts,[registration.colorId]:Math.max(0,Number(counts[registration.colorId]||1)-1)}},{merge:true});
+          const assignment=assignmentSnap.data()||{},counts=assignment.colorCounts||{},avatarOwners={...(assignment.avatarOwners||{})};
+          if(avatarOwners[registration.avatarId]===targetId)delete avatarOwners[registration.avatarId];
+          const poolUpdate={colorCounts:{...counts,[registration.colorId]:Math.max(0,Number(counts[registration.colorId]||1)-1)}};
+          if(assignment.identityPoolVersion===1){poolUpdate.identityPoolVersion=1;poolUpdate.avatarOwners=avatarOwners;}
+          transaction.set(assignmentsRef,poolUpdate,{merge:true});
           transaction.set(db.doc(`presence/${registration.uid}`),{userId:registration.uid,online:false,heartbeatAt:FieldValue.serverTimestamp()},{merge:true});
         }
         transaction.set(db.collection('moderationAudit').doc(),{action:action==='approve'?'approved':'rejected',adminId,targetUserId:registration.uid,timestamp:FieldValue.serverTimestamp()});
