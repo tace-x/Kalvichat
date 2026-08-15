@@ -1,8 +1,1163 @@
-/* Final interaction polish: transform/opacity animations only, with reduced-motion fallbacks. */
-html{background:var(--bg);overscroll-behavior:none;-webkit-tap-highlight-color:transparent}button,[role=button]{touch-action:manipulation}body{background:linear-gradient(145deg,color-mix(in srgb,var(--accent) 9%,#d9ded8),#d9ded8 48%,color-mix(in srgb,#c7d4ce 72%,#fff));transition:background-color .25s ease,color .2s ease}:root[data-theme=dark] body{background:linear-gradient(145deg,#0d1512,#111816 48%,#17211d)}.app-shell{height:100dvh;min-height:100%;padding:clamp(8px,1.6vw,18px)}.chat-app{isolation:isolate;box-shadow:0 28px 80px rgba(29,48,40,.16),0 2px 10px rgba(29,48,40,.08);transition:background-color .24s ease,border-color .24s ease,box-shadow .24s ease}.header,.composer-zone{transition:background-color .24s ease,border-color .24s ease}.brand-mark{position:relative;overflow:hidden}.brand-mark:after{content:"";position:absolute;inset:1px;border-radius:inherit;background:linear-gradient(145deg,rgba(255,255,255,.2),transparent 45%);pointer-events:none}.icon-button,.send,.message-menu,.reaction-counts button,.load-older,.new-messages,.auth-submit,.secondary-state,.card-actions button,.admin-main button{transition:transform .16s ease,box-shadow .18s ease,background-color .18s ease,border-color .18s ease,opacity .18s ease}.icon-button:active,.send:active:not(:disabled),.reaction-counts button:active:not(:disabled),.auth-submit:active:not(:disabled),.card-actions button:active{transform:scale(.96)}.history{scrollbar-gutter:stable;scroll-behavior:auto}.bubble{transition:background-color .2s ease,border-color .2s ease,box-shadow .2s ease}.message-row{contain:layout style}.composer textarea{transition:border-color .18s ease,box-shadow .18s ease,background-color .22s ease}.composer textarea:focus{border-color:color-mix(in srgb,var(--accent) 55%,var(--line));box-shadow:0 0 0 4px color-mix(in srgb,var(--accent) 11%,transparent),inset 0 1px 2px rgba(0,0,0,.03)}.composer textarea:disabled{cursor:not-allowed;opacity:.72}.composer-zone:focus-within{border-top-color:color-mix(in srgb,var(--accent) 24%,var(--line))}.new-messages{animation:soft-pop .22s cubic-bezier(.2,.8,.2,1)}.action-popover{transform-origin:top right;animation:popover-in .16s cubic-bezier(.2,.8,.2,1)}.modal-scrim{animation:fade-in .18s ease}.confirm{animation:modal-in .22s cubic-bezier(.2,.85,.25,1)}.confirm button:focus-visible{outline-offset:2px}.auth-card,.state-card{animation:card-in .35s cubic-bezier(.2,.8,.2,1)}.auth-switch button,.admin-shell aside button{transition:color .18s ease,background-color .18s ease,transform .16s ease}.admin-user-card,.stat-grid article,.moderation-message{transition:transform .18s ease,border-color .18s ease,box-shadow .2s ease,background-color .2s ease}.admin-main{scrollbar-gutter:stable}.admin-boot{height:100dvh;display:grid;place-content:center;justify-items:center;gap:10px;background:var(--bg);color:var(--muted);font-size:12px}.admin-boot p{margin:0}.form-error,.admin-error{animation:notice-in .2s ease}.connection-toast{animation:toast-in .2s ease}.sender-name,.original,.translation{font-feature-settings:"kern" 1,"liga" 1}.original{letter-spacing:-.005em}.minute-time{font-variant-numeric:tabular-nums}.logout-icon{font-size:18px}.reaction-counts button:disabled{cursor:default;opacity:.62}
-@media(hover:hover){.icon-button:hover{transform:translateY(-1px);box-shadow:0 7px 18px rgba(34,48,42,.12)}.bubble-shell:hover .bubble{box-shadow:0 4px 13px rgba(34,48,42,.09)}.reaction-counts button:hover:not(:disabled),.load-older:hover,.new-messages:hover{transform:translateY(-1px)}.admin-user-card:hover,.stat-grid article:hover,.moderation-message:hover{border-color:color-mix(in srgb,var(--accent) 22%,var(--line));box-shadow:0 7px 22px rgba(34,48,42,.08)}}
-@media(max-width:700px){input,textarea,select{font-size:16px!important}.app-shell{padding:0}.chat-app{height:100dvh;min-height:100%;box-shadow:none}.glass{backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px)}.header-actions{gap:8px}.presence-dot{margin-right:3px}.confirm{animation:sheet-in .24s cubic-bezier(.2,.82,.25,1)}.history{scrollbar-gutter:auto;-webkit-overflow-scrolling:touch}.message-row{contain:style}.auth-page{min-height:100dvh}.admin-main{overscroll-behavior:contain}}
-@media(max-width:360px){.header{padding-inline:10px}.title-wrap{margin-left:8px;gap:5px}.title-wrap h1{font-size:12px;letter-spacing:.1em}.icon-button{width:35px;height:35px}.handshake{display:none}.message-stack{max-width:84%}}
-@media(prefers-contrast:more){:root{--line:rgba(25,34,31,.24)}.bubble,.composer textarea,.icon-button{border-width:2px}.minute-time,.meta{color:var(--text)}}
-@keyframes fade-in{from{opacity:0}to{opacity:1}}@keyframes modal-in{from{opacity:0;transform:translateY(8px) scale(.985)}to{opacity:1;transform:none}}@keyframes sheet-in{from{opacity:0;transform:translateY(22px)}to{opacity:1;transform:none}}@keyframes popover-in{from{opacity:0;transform:translateY(-4px) scale(.975)}to{opacity:1;transform:none}}@keyframes soft-pop{from{opacity:0;transform:translate(-50%,5px) scale(.97)}to{opacity:1;transform:translate(-50%,0) scale(1)}}@keyframes card-in{from{opacity:0;transform:translateY(7px)}to{opacity:1;transform:none}}@keyframes notice-in{from{opacity:0;transform:translateY(-3px)}to{opacity:1;transform:none}}@keyframes toast-in{from{opacity:0;transform:translate(-50%,-3px)}to{opacity:1;transform:translate(-50%,0)}}
-@media(prefers-reduced-motion:reduce){.chat-app,.header,.composer-zone,.bubble,.composer textarea,.icon-button,.send,.message-menu,.reaction-counts button,.load-older,.new-messages,.auth-card,.state-card,.confirm,.action-popover,.admin-user-card,.stat-grid article,.moderation-message{transition:none!important;animation:none!important}}
+/*
+ * KALVI CHAT — Liquid Glass finish layer
+ * Loaded after styles.css and authAdmin.css. This file intentionally owns the
+ * final cascade for atmosphere, glass hierarchy, motion and responsive polish.
+ */
+
+/* ---------- Design tokens ---------- */
+:root {
+  --bg: #eef4f2;
+  --surface: rgba(255, 255, 255, 0.58);
+  --surface-solid: rgba(250, 253, 252, 0.92);
+  --text: #13211d;
+  --muted: #667871;
+  --line: rgba(37, 76, 65, 0.13);
+  --own: rgba(196, 235, 222, 0.72);
+  --bubble: rgba(255, 255, 255, 0.74);
+  --accent: #197a65;
+  --accent-strong: #0e6654;
+  --accent-soft: rgba(35, 166, 139, 0.15);
+  --icy: #9eddd5;
+  --silver: #b8c7c2;
+  --danger: #b84743;
+  --glass-highlight: rgba(255, 255, 255, 0.82);
+  --glass-edge: rgba(255, 255, 255, 0.64);
+  --glass-shadow: 0 24px 70px rgba(25, 54, 46, 0.15), 0 3px 14px rgba(25, 54, 46, 0.08);
+  --glass-shadow-soft: 0 10px 32px rgba(25, 54, 46, 0.1), 0 2px 7px rgba(25, 54, 46, 0.06);
+  --shadow: var(--glass-shadow);
+  --soft-shadow: var(--glass-shadow-soft);
+  --glass-blur-xl: 28px;
+  --glass-blur-lg: 20px;
+  --glass-blur-md: 14px;
+  --radius-xl: 30px;
+  --radius-lg: 22px;
+  --radius-md: 15px;
+  --ease-liquid: cubic-bezier(0.2, 0.82, 0.22, 1);
+  --ease-spring: cubic-bezier(0.2, 1, 0.3, 1);
+  --motion-fast: 150ms;
+  --motion-medium: 260ms;
+  --motion-slow: 520ms;
+  color-scheme: light;
+}
+
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --bg: #08110f;
+  --surface: rgba(18, 31, 28, 0.6);
+  --surface-solid: rgba(22, 37, 33, 0.92);
+  --text: #eef7f4;
+  --muted: #91a69f;
+  --line: rgba(205, 240, 230, 0.12);
+  --own: rgba(27, 85, 69, 0.68);
+  --bubble: rgba(25, 40, 36, 0.78);
+  --accent: #72cfb6;
+  --accent-strong: #8ce1ca;
+  --accent-soft: rgba(80, 206, 171, 0.14);
+  --icy: #89d9d4;
+  --silver: #82958f;
+  --danger: #f08b84;
+  --glass-highlight: rgba(225, 255, 247, 0.15);
+  --glass-edge: rgba(219, 255, 246, 0.14);
+  --glass-shadow: 0 30px 90px rgba(0, 0, 0, 0.4), 0 3px 18px rgba(0, 0, 0, 0.3);
+  --glass-shadow-soft: 0 12px 34px rgba(0, 0, 0, 0.25), 0 2px 8px rgba(0, 0, 0, 0.2);
+}
+
+/* ---------- Atmospheric friendship canvas ---------- */
+html {
+  background: var(--bg);
+  overscroll-behavior: none;
+  -webkit-tap-highlight-color: transparent;
+}
+
+body {
+  position: relative;
+  isolation: isolate;
+  background:
+    radial-gradient(circle at 12% 10%, rgba(62, 195, 157, 0.18), transparent 29%),
+    radial-gradient(circle at 88% 18%, rgba(120, 205, 211, 0.13), transparent 31%),
+    radial-gradient(circle at 56% 96%, rgba(52, 131, 112, 0.13), transparent 36%),
+    linear-gradient(145deg, #e8f1ee 0%, #f4f7f6 46%, #e4edeb 100%);
+  color: var(--text);
+  transition: background-color var(--motion-medium) ease, color var(--motion-medium) ease;
+}
+
+:root[data-theme="dark"] body {
+  background:
+    radial-gradient(circle at 14% 8%, rgba(39, 155, 126, 0.15), transparent 31%),
+    radial-gradient(circle at 86% 16%, rgba(70, 157, 164, 0.11), transparent 33%),
+    radial-gradient(circle at 55% 100%, rgba(42, 105, 90, 0.15), transparent 38%),
+    linear-gradient(145deg, #050b09 0%, #0b1512 48%, #0d1815 100%);
+}
+
+body::before {
+  content: "";
+  position: fixed;
+  z-index: -2;
+  inset: -36px;
+  pointer-events: none;
+  opacity: 0.32;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='520' height='360' viewBox='0 0 520 360'%3E%3Cg fill='none' stroke='%23277f6a' stroke-width='1.25' stroke-linecap='round' stroke-linejoin='round' opacity='.34'%3E%3Cpath d='M40 68c28-29 51 18 79-10s49 14 78-12'/%3E%3Cpath d='M356 54c9-16 33-6 27 11-5 14-28 25-28 25s-19-23-13-35c4-8 10-8 14-1z'/%3E%3Cpath d='M78 248c17-22 35-17 50 0 15 18 33 20 55-4'/%3E%3Cpath d='M420 248c18-24 48-6 37 17-8 17-38 35-38 35s-29-23-29-39c0-18 20-26 30-13z'/%3E%3Cpath d='M253 90l4 11 12 1-9 7 3 12-10-7-10 7 3-12-9-7 12-1z'/%3E%3Cpath d='M300 270c13-10 26-10 39 0s26 10 39 0'/%3E%3Cpath d='M53 153c13-5 21 5 17 17s-17 17-29 10-12-20-2-28c6-5 10-3 14 1z'/%3E%3Cpath d='M455 137c-8 9-8 19 0 28m-14-14h28'/%3E%3Ccircle cx='217' cy='292' r='4'/%3E%3Ccircle cx='224' cy='292' r='4'/%3E%3Cpath d='M211 304c8 7 16 7 24 0'/%3E%3Cpath d='M116 116c7 8 16 8 23 0m-12-9v19'/%3E%3Cpath d='M471 330c-22-14-43-14-65 0' stroke-dasharray='2.5 6'/%3E%3Cpath d='M18 332c25-19 52-17 77 2' stroke-dasharray='2.5 6'/%3E%3C/g%3E%3C/svg%3E");
+  background-size: 520px 360px;
+  transform: translate3d(0, 0, 0);
+  animation: doodle-drift 42s linear infinite alternate;
+}
+
+:root[data-theme="dark"] body::before {
+  opacity: 0.24;
+  filter: saturate(0.82) brightness(1.2);
+}
+
+body::after {
+  content: "";
+  position: fixed;
+  z-index: -1;
+  width: 48vw;
+  height: 48vw;
+  min-width: 420px;
+  min-height: 420px;
+  left: 28%;
+  top: 20%;
+  border-radius: 50%;
+  pointer-events: none;
+  opacity: 0.34;
+  background: radial-gradient(circle, rgba(121, 218, 194, 0.26), transparent 66%);
+  transform: translate3d(-4%, -3%, 0) scale(1);
+  animation: ambient-orbit 24s var(--ease-liquid) infinite alternate;
+}
+
+#root {
+  position: relative;
+  z-index: 0;
+}
+
+button,
+[role="button"] {
+  touch-action: manipulation;
+}
+
+button,
+input,
+textarea,
+select {
+  font-family: inherit;
+}
+
+/* ---------- Hierarchical glass ---------- */
+.glass,
+.header,
+.composer-zone,
+.auth-card,
+.state-card,
+.admin-shell aside,
+.confirm {
+  background:
+    linear-gradient(145deg, var(--glass-highlight), transparent 32%),
+    linear-gradient(120deg, color-mix(in srgb, var(--surface) 94%, transparent), color-mix(in srgb, var(--surface) 72%, transparent));
+  border-color: var(--glass-edge);
+  box-shadow: var(--glass-shadow);
+  backdrop-filter: blur(var(--glass-blur-lg)) saturate(135%);
+  -webkit-backdrop-filter: blur(var(--glass-blur-lg)) saturate(135%);
+}
+
+.glass,
+.auth-card,
+.state-card,
+.confirm,
+.header,
+.composer-zone {
+  position: relative;
+}
+
+.glass::before,
+.auth-card::before,
+.state-card::before,
+.confirm::before,
+.header::before,
+.composer-zone::before {
+  content: "";
+  position: absolute;
+  z-index: 0;
+  inset: 0;
+  border-radius: inherit;
+  pointer-events: none;
+  background:
+    linear-gradient(100deg, rgba(255, 255, 255, 0.19), transparent 18%, transparent 78%, rgba(154, 231, 215, 0.08)),
+    linear-gradient(to bottom, rgba(255, 255, 255, 0.16), transparent 20%);
+  box-shadow: inset 0 1px 0 var(--glass-highlight), inset 1px 0 0 rgba(255, 255, 255, 0.07);
+}
+
+.glass > *,
+.auth-card > *,
+.state-card > *,
+.confirm > *,
+.header > *,
+.composer-zone > * {
+  position: relative;
+  z-index: 1;
+}
+
+/* ---------- App frame and floating toolbar ---------- */
+.app-shell {
+  height: 100dvh;
+  min-height: 100%;
+  padding: clamp(10px, 1.7vw, 20px);
+}
+
+.chat-app {
+  isolation: isolate;
+  width: min(100%, 1200px);
+  height: min(100%, 920px);
+  padding: 10px;
+  gap: 7px;
+  overflow: hidden;
+  border: 1px solid color-mix(in srgb, var(--glass-edge) 84%, transparent);
+  border-radius: var(--radius-xl);
+  background:
+    linear-gradient(150deg, rgba(255, 255, 255, 0.14), transparent 35%),
+    color-mix(in srgb, var(--bg) 69%, transparent);
+  box-shadow: 0 36px 110px rgba(19, 48, 40, 0.2), 0 3px 14px rgba(18, 44, 37, 0.1), inset 0 1px 0 rgba(255, 255, 255, 0.5);
+  backdrop-filter: blur(var(--glass-blur-xl)) saturate(120%);
+  -webkit-backdrop-filter: blur(var(--glass-blur-xl)) saturate(120%);
+  transition: background-color var(--motion-medium) ease, border-color var(--motion-medium) ease, box-shadow var(--motion-medium) ease;
+}
+
+:root[data-theme="dark"] .chat-app {
+  box-shadow: 0 40px 120px rgba(0, 0, 0, 0.5), inset 0 1px 0 rgba(230, 255, 248, 0.1);
+}
+
+.header {
+  height: 60px;
+  margin: 0;
+  padding: 0 16px;
+  border: 1px solid var(--glass-edge);
+  border-radius: 20px;
+  overflow: hidden;
+  z-index: 8;
+}
+
+.title-wrap h1 {
+  font-weight: 720;
+  letter-spacing: 0.12em;
+  text-shadow: 0 1px 0 rgba(255, 255, 255, 0.24);
+}
+
+.brand-mark {
+  position: relative;
+  overflow: hidden;
+  border: 1px solid rgba(255, 255, 255, 0.22);
+  background:
+    linear-gradient(145deg, rgba(255, 255, 255, 0.24), transparent 44%),
+    linear-gradient(145deg, #278c73, #145b4c);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.42), 0 8px 20px rgba(21, 105, 86, 0.24);
+}
+
+.brand-mark::after {
+  content: "";
+  position: absolute;
+  inset: 1px;
+  border-radius: inherit;
+  pointer-events: none;
+  background: linear-gradient(145deg, rgba(255, 255, 255, 0.24), transparent 46%);
+}
+
+.header-actions {
+  gap: 10px;
+}
+
+.presence-dot {
+  background: #58c79a;
+  box-shadow: 0 0 0 4px rgba(74, 192, 145, 0.12), 0 0 14px rgba(74, 192, 145, 0.35);
+}
+
+.icon-button {
+  width: 38px;
+  height: 38px;
+  border: 1px solid var(--glass-edge);
+  border-radius: 13px;
+  background:
+    linear-gradient(145deg, rgba(255, 255, 255, 0.18), transparent 48%),
+    color-mix(in srgb, var(--surface-solid) 76%, transparent);
+  color: var(--text);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.18), var(--glass-shadow-soft);
+}
+
+/* ---------- Conversation canvas ---------- */
+.history {
+  min-height: 0;
+  border: 1px solid color-mix(in srgb, var(--line) 80%, transparent);
+  border-radius: 23px;
+  scrollbar-gutter: stable;
+  scrollbar-color: color-mix(in srgb, var(--accent) 30%, transparent) transparent;
+  background-color: color-mix(in srgb, var(--bg) 52%, transparent);
+  background-image:
+    linear-gradient(180deg, color-mix(in srgb, var(--glass-highlight) 22%, transparent), transparent 18%),
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='360' height='260' viewBox='0 0 360 260'%3E%3Cg fill='none' stroke='%232f8b74' stroke-width='.8' stroke-linecap='round' opacity='.13'%3E%3Cpath d='M22 48c28-18 49 13 76-7'/%3E%3Cpath d='M290 34c8-12 25-5 20 8-4 10-21 19-21 19s-15-17-10-27c3-6 8-5 11 0z'/%3E%3Cpath d='M84 207c20-14 39-13 58 2' stroke-dasharray='2 5'/%3E%3Cpath d='M244 186l3 8 9 1-7 5 2 9-7-5-8 5 3-9-7-5 9-1z'/%3E%3Cpath d='M310 228c-14-8-28-8-42 0'/%3E%3C/g%3E%3C/svg%3E");
+  background-size: auto, 360px 260px;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.15);
+  -webkit-overflow-scrolling: touch;
+}
+
+.history-inner {
+  max-width: 850px;
+  padding: 22px 30px 28px;
+}
+
+.load-older,
+.date-marker span,
+.new-messages {
+  border: 1px solid var(--glass-edge);
+  background:
+    linear-gradient(145deg, rgba(255, 255, 255, 0.16), transparent 45%),
+    color-mix(in srgb, var(--surface-solid) 79%, transparent);
+  box-shadow: var(--glass-shadow-soft), inset 0 1px 0 rgba(255, 255, 255, 0.16);
+  backdrop-filter: blur(10px) saturate(125%);
+  -webkit-backdrop-filter: blur(10px) saturate(125%);
+}
+
+.date-marker span {
+  padding: 6px 11px;
+  letter-spacing: 0.025em;
+}
+
+.unread-divider::before,
+.unread-divider::after {
+  background: linear-gradient(90deg, transparent, color-mix(in srgb, var(--accent) 45%, transparent), transparent);
+}
+
+.new-messages {
+  padding: 9px 15px;
+  animation: soft-pop var(--motion-medium) var(--ease-spring);
+}
+
+/* ---------- Messages ---------- */
+.message-row {
+  contain: layout style;
+  animation: message-arrive 220ms var(--ease-liquid) both;
+}
+
+.message-row.streak-start {
+  margin-top: 13px;
+}
+
+.avatar-slot img {
+  border: 1px solid rgba(255, 255, 255, 0.28);
+  border-radius: 12px;
+  box-shadow: 0 6px 18px rgba(25, 53, 45, 0.15), inset 0 1px 0 rgba(255, 255, 255, 0.3);
+}
+
+.sender-name {
+  letter-spacing: 0.015em;
+  text-shadow: 0 1px 0 rgba(255, 255, 255, 0.12);
+}
+
+.minute-time,
+.meta {
+  font-variant-numeric: tabular-nums;
+}
+
+.bubble {
+  position: relative;
+  overflow: hidden;
+  padding: 9px 12px 7px;
+  border: 1px solid color-mix(in srgb, var(--sender, var(--silver)) 22%, var(--glass-edge));
+  border-left: 2px solid color-mix(in srgb, var(--sender, var(--accent)) 62%, transparent);
+  border-radius: 9px 17px 17px 9px;
+  background:
+    linear-gradient(145deg, rgba(255, 255, 255, 0.2), transparent 39%),
+    color-mix(in srgb, var(--bubble) 91%, transparent);
+  box-shadow: 0 5px 18px rgba(23, 51, 43, 0.08), inset 0 1px 0 rgba(255, 255, 255, 0.22);
+  transition: transform var(--motion-fast) var(--ease-liquid), border-color var(--motion-medium) ease, box-shadow var(--motion-medium) ease, background-color var(--motion-medium) ease;
+}
+
+.bubble::before {
+  content: "";
+  position: absolute;
+  inset: 0 0 auto;
+  height: 42%;
+  pointer-events: none;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.11), transparent);
+}
+
+.bubble > * {
+  position: relative;
+  z-index: 1;
+}
+
+.own .bubble {
+  border: 1px solid color-mix(in srgb, var(--accent) 25%, var(--glass-edge));
+  border-right: 2px solid color-mix(in srgb, var(--accent) 66%, transparent);
+  border-left-width: 1px;
+  border-radius: 17px 9px 9px 17px;
+  background:
+    linear-gradient(145deg, rgba(255, 255, 255, 0.16), transparent 40%),
+    linear-gradient(135deg, color-mix(in srgb, var(--own) 94%, transparent), color-mix(in srgb, var(--own) 73%, transparent));
+}
+
+.original {
+  font-size: 14px;
+  line-height: 1.48;
+  letter-spacing: -0.004em;
+  font-feature-settings: "kern" 1, "liga" 1;
+}
+
+.original mark {
+  border: 1px solid color-mix(in srgb, var(--accent) 20%, transparent);
+  border-radius: 5px;
+  background: var(--accent-soft);
+}
+
+.translation {
+  margin-top: 7px !important;
+  padding-top: 7px;
+  border-top-color: color-mix(in srgb, var(--line) 80%, transparent);
+}
+
+.deleted {
+  border-style: dashed;
+  color: var(--muted);
+  background: color-mix(in srgb, var(--bubble) 55%, transparent);
+  box-shadow: none;
+}
+
+.reply-preview {
+  border: 1px solid color-mix(in srgb, var(--line) 70%, transparent);
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--surface-solid) 46%, transparent);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.1);
+}
+
+.reply-line {
+  background: linear-gradient(to bottom, var(--icy), var(--accent));
+}
+
+.reaction-counts button {
+  min-height: 25px;
+  border: 1px solid var(--glass-edge);
+  background: color-mix(in srgb, var(--surface-solid) 82%, transparent);
+  box-shadow: 0 5px 14px rgba(19, 46, 38, 0.09), inset 0 1px 0 rgba(255, 255, 255, 0.18);
+}
+
+.reaction-counts button.mine {
+  border-color: color-mix(in srgb, var(--accent) 55%, transparent);
+  background: color-mix(in srgb, var(--accent) 17%, var(--surface-solid));
+}
+
+.message-menu {
+  transition: opacity var(--motion-fast) ease, transform var(--motion-fast) ease, background-color var(--motion-fast) ease;
+}
+
+/* ---------- Typing and composer ---------- */
+.typing {
+  height: 20px;
+  padding-left: max(23px, calc((100% - 770px) / 2));
+  background: transparent;
+}
+
+.typing > span {
+  box-shadow: 0 0 8px color-mix(in srgb, var(--accent) 48%, transparent);
+}
+
+.composer-zone {
+  margin: 0;
+  padding: 9px 13px max(9px, env(safe-area-inset-bottom));
+  overflow: visible;
+  border: 1px solid var(--glass-edge);
+  border-radius: 21px;
+  z-index: 8;
+  transition: border-color var(--motion-medium) ease, box-shadow var(--motion-medium) ease, background-color var(--motion-medium) ease;
+}
+
+.composer-zone:focus-within {
+  border-color: color-mix(in srgb, var(--accent) 42%, var(--glass-edge));
+  box-shadow: 0 18px 55px rgba(22, 91, 73, 0.16), 0 0 0 1px color-mix(in srgb, var(--accent) 12%, transparent), inset 0 1px 0 var(--glass-highlight);
+}
+
+.composer {
+  max-width: 840px;
+  gap: 10px;
+}
+
+.composer textarea {
+  min-height: 45px;
+  max-height: 150px;
+  border: 1px solid color-mix(in srgb, var(--glass-edge) 88%, transparent);
+  border-radius: 16px;
+  background:
+    linear-gradient(145deg, rgba(255, 255, 255, 0.1), transparent 45%),
+    color-mix(in srgb, var(--surface-solid) 67%, transparent);
+  color: var(--text);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.13), inset 0 2px 6px rgba(14, 44, 36, 0.035);
+  transition: border-color var(--motion-fast) ease, box-shadow var(--motion-medium) ease, background-color var(--motion-medium) ease;
+}
+
+.composer textarea:focus {
+  border-color: color-mix(in srgb, var(--accent) 52%, var(--glass-edge));
+  box-shadow: 0 0 0 4px color-mix(in srgb, var(--accent) 10%, transparent), inset 0 1px 0 rgba(255, 255, 255, 0.16);
+}
+
+.composer textarea:disabled {
+  cursor: not-allowed;
+  opacity: 0.68;
+}
+
+.send {
+  width: 45px;
+  height: 45px;
+  flex: 0 0 45px;
+  overflow: hidden;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 16px;
+  background:
+    linear-gradient(145deg, rgba(255, 255, 255, 0.28), transparent 40%),
+    linear-gradient(145deg, #259479, #12634f);
+  box-shadow: 0 10px 25px rgba(23, 123, 98, 0.25), inset 0 1px 0 rgba(255, 255, 255, 0.35);
+  transition: transform var(--motion-fast) var(--ease-spring), filter var(--motion-fast) ease, box-shadow var(--motion-medium) ease, opacity var(--motion-fast) ease;
+}
+
+.send:disabled {
+  filter: saturate(0.35);
+  opacity: 0.35;
+}
+
+.compose-context {
+  border-color: var(--glass-edge);
+  border-radius: 14px;
+  background: color-mix(in srgb, var(--surface-solid) 68%, transparent);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.12);
+  animation: context-open 180ms var(--ease-liquid);
+}
+
+/* ---------- Popovers and confirmations ---------- */
+.action-popover {
+  overflow: hidden;
+  border: 1px solid var(--glass-edge);
+  border-radius: 17px;
+  background:
+    linear-gradient(145deg, var(--glass-highlight), transparent 35%),
+    color-mix(in srgb, var(--surface-solid) 88%, transparent);
+  box-shadow: var(--glass-shadow);
+  backdrop-filter: blur(var(--glass-blur-lg)) saturate(135%);
+  -webkit-backdrop-filter: blur(var(--glass-blur-lg)) saturate(135%);
+  transform-origin: top right;
+  animation: popover-in 170ms var(--ease-spring);
+}
+
+.action-popover > button,
+.reaction-grid button {
+  transition: background-color var(--motion-fast) ease, transform var(--motion-fast) ease;
+}
+
+.modal-scrim {
+  background: rgba(3, 12, 10, 0.5);
+  backdrop-filter: blur(6px) saturate(110%);
+  -webkit-backdrop-filter: blur(6px) saturate(110%);
+  animation: fade-in 180ms ease;
+}
+
+.confirm {
+  overflow: hidden;
+  border-radius: 25px;
+  animation: modal-in 240ms var(--ease-spring);
+}
+
+.confirm-icon {
+  border: 1px solid color-mix(in srgb, var(--danger) 24%, transparent);
+  background: color-mix(in srgb, var(--danger) 11%, transparent);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.12);
+}
+
+.confirm button {
+  min-height: 42px;
+  transition: transform var(--motion-fast) ease, filter var(--motion-fast) ease, background-color var(--motion-fast) ease;
+}
+
+.secondary {
+  border: 1px solid var(--line) !important;
+  background: color-mix(in srgb, var(--surface-solid) 58%, transparent);
+}
+
+.destructive {
+  box-shadow: 0 7px 18px color-mix(in srgb, var(--danger) 22%, transparent);
+}
+
+/* ---------- Authentication ---------- */
+.auth-page,
+.admin-login {
+  position: relative;
+  isolation: isolate;
+  min-height: 100dvh;
+  background: transparent;
+  overflow: auto;
+}
+
+.auth-page::before,
+.admin-login::before {
+  content: "";
+  position: fixed;
+  z-index: -1;
+  inset: 0;
+  pointer-events: none;
+  background:
+    radial-gradient(circle at 18% 22%, rgba(61, 191, 155, 0.2), transparent 29%),
+    radial-gradient(circle at 82% 70%, rgba(100, 191, 196, 0.13), transparent 32%);
+}
+
+.auth-card,
+.state-card {
+  overflow: hidden;
+  border: 1px solid var(--glass-edge);
+  border-radius: 30px;
+  box-shadow: 0 34px 100px rgba(17, 55, 45, 0.2), inset 0 1px 0 var(--glass-highlight);
+  animation: card-in 420ms var(--ease-spring);
+}
+
+.auth-card {
+  width: min(100%, 455px);
+  padding: 30px;
+}
+
+.auth-brand h1 {
+  font-weight: 760;
+  letter-spacing: 0.14em;
+}
+
+.auth-switch {
+  border-color: var(--glass-edge);
+  border-radius: 17px;
+  background: color-mix(in srgb, var(--surface-solid) 42%, transparent);
+  box-shadow: inset 0 1px 4px rgba(18, 52, 43, 0.055);
+}
+
+.auth-switch .switch-glass {
+  border: 1px solid var(--glass-edge);
+  border-radius: 13px;
+  background:
+    linear-gradient(145deg, rgba(255, 255, 255, 0.2), transparent 48%),
+    color-mix(in srgb, var(--surface-solid) 78%, transparent);
+  box-shadow: var(--glass-shadow-soft), inset 0 1px 0 rgba(255, 255, 255, 0.2);
+  transition: transform 320ms var(--ease-spring);
+}
+
+.auth-form {
+  animation: auth-form-in 260ms var(--ease-liquid);
+}
+
+.auth-form input,
+.auth-form select,
+.admin-login input,
+.reason-input input,
+.reason-input textarea {
+  border: 1px solid var(--glass-edge);
+  border-radius: 14px;
+  background:
+    linear-gradient(145deg, rgba(255, 255, 255, 0.09), transparent 42%),
+    color-mix(in srgb, var(--surface-solid) 68%, transparent);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.12), inset 0 2px 6px rgba(17, 52, 43, 0.03);
+  transition: border-color var(--motion-fast) ease, box-shadow var(--motion-medium) ease, background-color var(--motion-medium) ease, transform var(--motion-fast) ease;
+}
+
+.auth-form input:focus,
+.auth-form select:focus,
+.admin-login input:focus,
+.reason-input input:focus,
+.reason-input textarea:focus {
+  border-color: color-mix(in srgb, var(--accent) 56%, var(--glass-edge));
+  box-shadow: 0 0 0 4px color-mix(in srgb, var(--accent) 11%, transparent), inset 0 1px 0 rgba(255, 255, 255, 0.15);
+}
+
+.auth-submit {
+  overflow: hidden;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-radius: 14px;
+  background:
+    linear-gradient(145deg, rgba(255, 255, 255, 0.24), transparent 42%),
+    linear-gradient(145deg, #258f76, #12624f);
+  box-shadow: 0 12px 26px rgba(19, 118, 92, 0.24), inset 0 1px 0 rgba(255, 255, 255, 0.28);
+  transition: transform var(--motion-fast) var(--ease-spring), box-shadow var(--motion-medium) ease, filter var(--motion-fast) ease, opacity var(--motion-fast) ease;
+}
+
+.status-box,
+.reason-box {
+  border-color: var(--glass-edge);
+  background: color-mix(in srgb, var(--surface-solid) 58%, transparent);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.1);
+}
+
+/* ---------- Admin ---------- */
+.admin-shell {
+  position: relative;
+  isolation: isolate;
+  background: transparent;
+}
+
+.admin-shell::before {
+  content: "";
+  position: fixed;
+  z-index: -1;
+  inset: 0;
+  pointer-events: none;
+  background:
+    radial-gradient(circle at 5% 10%, rgba(54, 174, 142, 0.13), transparent 27%),
+    radial-gradient(circle at 92% 86%, rgba(85, 167, 173, 0.1), transparent 32%);
+}
+
+.admin-shell aside {
+  border-right-color: var(--glass-edge);
+  box-shadow: 14px 0 45px rgba(14, 42, 34, 0.08), inset -1px 0 0 rgba(255, 255, 255, 0.06);
+}
+
+.admin-shell aside button,
+.admin-main header button,
+.load-more,
+.mobile-menu {
+  transition: transform var(--motion-fast) ease, color var(--motion-fast) ease, background-color var(--motion-fast) ease, border-color var(--motion-fast) ease, box-shadow var(--motion-medium) ease;
+}
+
+.admin-shell aside button.active {
+  border: 1px solid color-mix(in srgb, var(--accent) 20%, transparent);
+  background:
+    linear-gradient(145deg, rgba(255, 255, 255, 0.1), transparent),
+    color-mix(in srgb, var(--accent) 14%, transparent);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08);
+}
+
+.stat-grid article,
+.admin-user-card,
+.moderation-message {
+  border-color: var(--glass-edge);
+  background:
+    linear-gradient(145deg, rgba(255, 255, 255, 0.1), transparent 36%),
+    color-mix(in srgb, var(--surface) 80%, transparent);
+  box-shadow: var(--glass-shadow-soft), inset 0 1px 0 rgba(255, 255, 255, 0.1);
+  transition: transform var(--motion-fast) var(--ease-liquid), border-color var(--motion-medium) ease, box-shadow var(--motion-medium) ease, background-color var(--motion-medium) ease;
+}
+
+.member-badges span,
+.member-badges i {
+  border: 1px solid color-mix(in srgb, currentColor 13%, transparent);
+  background: color-mix(in srgb, var(--surface-solid) 50%, transparent);
+}
+
+.clear-chat,
+.danger-outline,
+.moderation-message button {
+  transition: transform var(--motion-fast) ease, background-color var(--motion-fast) ease, border-color var(--motion-fast) ease, box-shadow var(--motion-fast) ease;
+}
+
+.admin-main {
+  scrollbar-gutter: stable;
+}
+
+.admin-boot {
+  height: 100dvh;
+  display: grid;
+  place-content: center;
+  justify-items: center;
+  gap: 10px;
+  background: var(--bg);
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.admin-boot p {
+  margin: 0;
+}
+
+/* ---------- Feedback and controls ---------- */
+.icon-button,
+.send,
+.message-menu,
+.reaction-counts button,
+.load-older,
+.new-messages,
+.auth-submit,
+.secondary-state,
+.card-actions button,
+.admin-main button {
+  transition: transform var(--motion-fast) var(--ease-spring), box-shadow var(--motion-medium) ease, background-color var(--motion-fast) ease, border-color var(--motion-fast) ease, opacity var(--motion-fast) ease, filter var(--motion-fast) ease;
+}
+
+.form-error,
+.admin-error {
+  animation: notice-in 200ms ease;
+}
+
+.connection-toast {
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  box-shadow: var(--glass-shadow-soft);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  animation: toast-in 200ms ease;
+}
+
+.spinner {
+  filter: drop-shadow(0 0 5px color-mix(in srgb, var(--accent) 25%, transparent));
+}
+
+:where(button, input, textarea, select, [role="button"]):focus-visible {
+  outline: 3px solid color-mix(in srgb, var(--icy) 56%, transparent);
+  outline-offset: 3px;
+}
+
+/* ---------- Hover and press states ---------- */
+@media (hover: hover) {
+  .icon-button:hover,
+  .load-older:hover,
+  .new-messages:hover,
+  .secondary-state:hover,
+  .admin-main header button:hover,
+  .load-more:hover {
+    transform: translateY(-2px);
+    border-color: color-mix(in srgb, var(--accent) 31%, var(--glass-edge));
+    box-shadow: 0 13px 30px rgba(23, 72, 59, 0.14), inset 0 1px 0 rgba(255, 255, 255, 0.18);
+  }
+
+  .send:hover:not(:disabled),
+  .auth-submit:hover:not(:disabled) {
+    transform: translateY(-2px) scale(1.015);
+    filter: brightness(1.06) saturate(1.04);
+    box-shadow: 0 14px 32px rgba(20, 124, 96, 0.3), inset 0 1px 0 rgba(255, 255, 255, 0.32);
+  }
+
+  .bubble-shell:hover .bubble {
+    transform: translateY(-1px);
+    border-color: color-mix(in srgb, var(--sender, var(--accent)) 34%, var(--glass-edge));
+    box-shadow: 0 9px 24px rgba(22, 52, 43, 0.11), inset 0 1px 0 rgba(255, 255, 255, 0.2);
+  }
+
+  .reaction-counts button:hover:not(:disabled) {
+    transform: translateY(-2px) scale(1.025);
+  }
+
+  .action-popover > button:hover,
+  .reaction-grid button:hover {
+    transform: translateX(2px);
+    background: color-mix(in srgb, var(--accent) 11%, transparent);
+  }
+
+  .admin-user-card:hover,
+  .stat-grid article:hover,
+  .moderation-message:hover {
+    transform: translateY(-2px);
+    border-color: color-mix(in srgb, var(--accent) 27%, var(--glass-edge));
+    box-shadow: 0 17px 42px rgba(20, 57, 47, 0.13), inset 0 1px 0 rgba(255, 255, 255, 0.12);
+  }
+}
+
+.icon-button:active,
+.send:active:not(:disabled),
+.auth-submit:active:not(:disabled),
+.reaction-counts button:active:not(:disabled),
+.card-actions button:active,
+.admin-main button:active:not(:disabled) {
+  transform: scale(0.96);
+}
+
+:where(button):disabled {
+  cursor: default;
+}
+
+.reaction-counts button:disabled {
+  opacity: 0.58;
+}
+
+/* ---------- Responsive ---------- */
+@media (max-width: 1000px) {
+  .app-shell {
+    padding: 9px;
+  }
+
+  .chat-app {
+    border-radius: 23px;
+  }
+}
+
+@media (max-width: 700px) {
+  input,
+  textarea,
+  select {
+    font-size: 16px !important;
+  }
+
+  body::before {
+    opacity: 0.2;
+    background-size: 430px 298px;
+  }
+
+  body::after {
+    opacity: 0.22;
+  }
+
+  .app-shell {
+    padding: 0;
+  }
+
+  .chat-app {
+    width: 100%;
+    height: 100dvh;
+    min-height: 100%;
+    padding: 6px;
+    gap: 5px;
+    border: 0;
+    border-radius: 0;
+    box-shadow: none;
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+  }
+
+  .glass,
+  .header,
+  .composer-zone,
+  .auth-card,
+  .state-card,
+  .confirm {
+    backdrop-filter: blur(13px) saturate(125%);
+    -webkit-backdrop-filter: blur(13px) saturate(125%);
+  }
+
+  .header {
+    height: 56px;
+    padding: 0 10px;
+    border-radius: 17px;
+  }
+
+  .header-actions {
+    gap: 7px;
+  }
+
+  .presence-dot {
+    margin-right: 2px;
+  }
+
+  .history {
+    border-radius: 19px;
+    scrollbar-gutter: auto;
+  }
+
+  .history-inner {
+    padding: 13px 8px 22px;
+  }
+
+  .message-row {
+    contain: style;
+    animation-duration: 160ms;
+  }
+
+  .message-stack {
+    max-width: 83%;
+  }
+
+  .bubble {
+    padding: 8px 11px 6px;
+  }
+
+  .composer-zone {
+    padding: 7px 8px max(7px, env(safe-area-inset-bottom));
+    border-radius: 18px;
+  }
+
+  .composer textarea {
+    min-height: 44px;
+  }
+
+  .send {
+    width: 44px;
+    height: 44px;
+    flex-basis: 44px;
+  }
+
+  .auth-page {
+    min-height: 100dvh;
+    padding: 12px;
+  }
+
+  .auth-card,
+  .state-card {
+    padding: 23px;
+    border-radius: 25px;
+  }
+
+  .confirm {
+    border-radius: 26px 26px 13px 13px;
+    animation: sheet-in 240ms var(--ease-spring);
+  }
+
+  .admin-main {
+    overscroll-behavior: contain;
+  }
+}
+
+@media (max-width: 380px) {
+  .header {
+    padding-inline: 9px;
+  }
+
+  .title-wrap {
+    margin-left: 8px;
+    gap: 5px;
+  }
+
+  .title-wrap h1 {
+    max-width: 116px;
+    overflow: hidden;
+    font-size: 12px;
+    letter-spacing: 0.09em;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .handshake {
+    display: none;
+  }
+
+  .icon-button {
+    width: 35px;
+    height: 35px;
+  }
+
+  .message-stack {
+    max-width: 85%;
+  }
+
+  .auth-card,
+  .state-card {
+    padding: 19px;
+  }
+}
+
+/* ---------- Accessibility ---------- */
+@media (prefers-contrast: more) {
+  :root {
+    --line: rgba(18, 53, 43, 0.3);
+    --glass-edge: rgba(18, 53, 43, 0.32);
+  }
+
+  :root[data-theme="dark"] {
+    --line: rgba(230, 255, 248, 0.28);
+    --glass-edge: rgba(230, 255, 248, 0.28);
+  }
+
+  .bubble,
+  .composer textarea,
+  .icon-button,
+  .auth-form input,
+  .auth-form select {
+    border-width: 2px;
+  }
+
+  .minute-time,
+  .meta {
+    color: var(--text);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  body::before,
+  body::after {
+    animation: none !important;
+    transform: none !important;
+  }
+
+  .message-row,
+  .new-messages,
+  .auth-card,
+  .state-card,
+  .auth-form,
+  .confirm,
+  .action-popover,
+  .compose-context,
+  .form-error,
+  .admin-error,
+  .connection-toast {
+    animation: none !important;
+  }
+
+  .chat-app,
+  .header,
+  .composer-zone,
+  .bubble,
+  .composer textarea,
+  .icon-button,
+  .send,
+  .message-menu,
+  .reaction-counts button,
+  .load-older,
+  .new-messages,
+  .auth-submit,
+  .secondary-state,
+  .admin-user-card,
+  .stat-grid article,
+  .moderation-message,
+  .admin-shell,
+  .admin-shell aside,
+  .auth-switch .switch-glass {
+    transition: none !important;
+  }
+}
+
+/* ---------- Motion ---------- */
+@keyframes doodle-drift {
+  0% { transform: translate3d(-12px, -7px, 0); }
+  50% { transform: translate3d(10px, 5px, 0); }
+  100% { transform: translate3d(18px, -3px, 0); }
+}
+
+@keyframes ambient-orbit {
+  0% { transform: translate3d(-5%, -4%, 0) scale(0.96); opacity: 0.25; }
+  100% { transform: translate3d(6%, 5%, 0) scale(1.08); opacity: 0.4; }
+}
+
+@keyframes message-arrive {
+  from { opacity: 0; transform: translate3d(0, 5px, 0) scale(0.992); }
+  to { opacity: 1; transform: translate3d(0, 0, 0) scale(1); }
+}
+
+@keyframes fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes modal-in {
+  from { opacity: 0; transform: translate3d(0, 10px, 0) scale(0.982); }
+  to { opacity: 1; transform: translate3d(0, 0, 0) scale(1); }
+}
+
+@keyframes sheet-in {
+  from { opacity: 0; transform: translate3d(0, 28px, 0); }
+  to { opacity: 1; transform: translate3d(0, 0, 0); }
+}
+
+@keyframes popover-in {
+  from { opacity: 0; transform: translate3d(0, -5px, 0) scale(0.975); }
+  to { opacity: 1; transform: translate3d(0, 0, 0) scale(1); }
+}
+
+@keyframes soft-pop {
+  from { opacity: 0; transform: translate3d(-50%, 6px, 0) scale(0.97); }
+  to { opacity: 1; transform: translate3d(-50%, 0, 0) scale(1); }
+}
+
+@keyframes card-in {
+  from { opacity: 0; transform: translate3d(0, 10px, 0) scale(0.99); }
+  to { opacity: 1; transform: translate3d(0, 0, 0) scale(1); }
+}
+
+@keyframes auth-form-in {
+  from { opacity: 0; transform: translate3d(0, 5px, 0); }
+  to { opacity: 1; transform: translate3d(0, 0, 0); }
+}
+
+@keyframes context-open {
+  from { opacity: 0; transform: translate3d(0, 4px, 0); }
+  to { opacity: 1; transform: translate3d(0, 0, 0); }
+}
+
+@keyframes notice-in {
+  from { opacity: 0; transform: translate3d(0, -4px, 0); }
+  to { opacity: 1; transform: translate3d(0, 0, 0); }
+}
+
+@keyframes toast-in {
+  from { opacity: 0; transform: translate3d(-50%, -5px, 0); }
+  to { opacity: 1; transform: translate3d(-50%, 0, 0); }
+}
