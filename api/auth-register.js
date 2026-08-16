@@ -66,7 +66,7 @@ export default async function handler(request, response) {
     });
     reservation = { registrationRef, usernameRef, phoneRef, assignmentsRef, colorId:selected.color.id, avatarId:selected.avatarId };
 
-    const internalEmail = `${registrationRef.id}@auth.mallu-jaabi.invalid`;
+    const internalEmail = `${registrationRef.id}@auth.kalvi-chat.invalid`;
     authUser = await auth.createUser({ email:internalEmail, password:input.password, displayName:input.name, disabled:false });
     await db.runTransaction(async (transaction) => {
       const [usernameSnap, phoneSnap] = await Promise.all([transaction.get(usernameRef), transaction.get(phoneRef)]);
