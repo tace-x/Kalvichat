@@ -124,6 +124,7 @@ export async function editMessage(id, originalText) {
     updatedAt: serverTimestamp(),
     detectedLanguage: 'pending',
     translationStatus: 'pending',
+    englishText: deleteField(),
     hinglishText: deleteField(),
     manglishText: deleteField(),
   });
@@ -133,6 +134,7 @@ export async function deleteMessage(id) {
   configured();
   await updateDoc(doc(db, 'chatMessages', id), {
     originalText: deleteField(),
+    englishText: deleteField(),
     hinglishText: deleteField(),
     manglishText: deleteField(),
     deleted: true,
