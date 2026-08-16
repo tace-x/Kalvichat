@@ -1,10 +1,10 @@
 import { FieldValue } from 'firebase-admin/firestore';
 import { requireAdmin, requireSameOrigin } from '../server/adminSession.js';
 import { getAdmin } from '../server/firebaseAdmin.js';
-import { ensureIdentityPool } from '../server/identityPool.js';
-import { safeReason } from '../server/validators.js';
+import { activeIdentity, ensureIdentityPool } from '../server/identityPool.js';
+import { AVATARS, safeReason } from '../server/validators.js';
 
-const allowed=new Set(['approve','reject','mute','unmute','ban','unban','deleteMessage','clearChat']);
+const allowed=new Set(['approve','reject','mute','unmute','ban','unban','changeAvatar','deleteMessage','clearChat']);
 const validId=(value)=>/^[A-Za-z0-9_-]{10,220}$/.test(value);
 
 async function deleteMessage(db,messageId,adminId){
@@ -39,6 +39,45 @@ async function deleteMessage(db,messageId,adminId){
   }catch(cleanupError){console.error('Post-delete cleanup failed:',cleanupError);}
 }
 
+async function changeAvatar(db,targetUserId,newAvatarId,adminId){
+  if(!AVATARS.includes(newAvatarId))throw Object.assign(new Error('Invalid avatar selection.'),{status:400});
+  await ensureIdentityPool(db);
+  const memberRef=db.doc(`members/${targetUserId}`),assignmentsRef=db.doc('system/assignments');
+  return db.runTransaction(async(transaction)=>{
+    const memberSnap=await transaction.get(memberRef);
+    if(!memberSnap.exists)throw Object.assign(new Error('User not found.'),{status:404});
+    const member=memberSnap.data();
+    if(!activeIdentity(member))throw Object.assign(new Error('Only pending, approved, or banned accounts can receive an avatar.'),{status:409});
+    const oldAvatarId=member.avatarId;
+    if(oldAvatarId===newAvatarId)return{changed:false,oldAvatarId,newAvatarId};
+
+    const newOwnersQuery=db.collection('members').where('avatarId','==',newAvatarId);
+    const oldOwnersQuery=db.collection('members').where('avatarId','==',AVATARS.includes(oldAvatarId)?oldAvatarId:'__invalid_avatar__');
+    const [assignmentSnap,newOwnersSnap,oldOwnersSnap]=await Promise.all([
+      transaction.get(assignmentsRef),transaction.get(newOwnersQuery),transaction.get(oldOwnersQuery),
+    ]);
+    const occupiedBy=newOwnersSnap.docs.filter((snapshot)=>snapshot.id!==targetUserId&&activeIdentity(snapshot.data()));
+    if(occupiedBy.length)throw Object.assign(new Error('That avatar is already assigned to another active account.'),{status:409,code:'avatar-in-use'});
+
+    const assignment=assignmentSnap.data()||{},avatarOwners={...(assignment.avatarOwners||{})},avatarConflicts={...(assignment.avatarConflicts||{})};
+    delete avatarOwners[oldAvatarId];delete avatarConflicts[oldAvatarId];
+    const oldRemaining=oldOwnersSnap.docs.filter((snapshot)=>snapshot.id!==targetUserId&&activeIdentity(snapshot.data()));
+    if(oldRemaining.length===1)avatarOwners[oldAvatarId]=oldRemaining[0].data().registrationId||oldRemaining[0].id;
+    if(oldRemaining.length>1)avatarConflicts[oldAvatarId]=oldRemaining.map((snapshot)=>snapshot.id);
+    delete avatarConflicts[newAvatarId];
+    avatarOwners[newAvatarId]=member.registrationId||targetUserId;
+
+    const avatar=`/avatars/${newAvatarId}.svg`;
+    transaction.set(assignmentsRef,{identityPoolVersion:1,avatarOwners,avatarConflicts},{merge:true});
+    transaction.update(memberRef,{avatarId:newAvatarId,avatar,updatedAt:FieldValue.serverTimestamp()});
+    if(member.registrationId)transaction.update(db.doc(`registrations/${member.registrationId}`),{avatarId:newAvatarId,avatar,updatedAt:FieldValue.serverTimestamp()});
+    if(member.status==='approved'||member.status==='banned')transaction.set(db.doc(`chatMembers/${targetUserId}`),{avatarId:newAvatarId,avatar,updatedAt:FieldValue.serverTimestamp()},{merge:true});
+    transaction.set(db.doc('system/chatMeta'),{identities:{[targetUserId]:{avatarId:newAvatarId,avatar,colorId:member.colorId,senderColor:member.senderColor}},updatedAt:FieldValue.serverTimestamp()},{merge:true});
+    transaction.set(db.collection('moderationAudit').doc(),{action:'change_avatar',adminId,targetUserId,oldAvatarId,newAvatarId,timestamp:FieldValue.serverTimestamp()});
+    return{changed:true,oldAvatarId,newAvatarId};
+  });
+}
+
 async function clearChat(db,adminId){
   const stateRef=db.doc('system/chatState');
   return db.runTransaction(async(transaction)=>{
@@ -56,7 +95,7 @@ export default async function handler(request,response){
   if(request.method!=='POST')return response.status(405).json({error:'Method not allowed'});
   try{
     requireSameOrigin(request);const session=requireAdmin(request);
-    const action=String(request.body?.action||''),targetId=String(request.body?.targetId||'');
+    const action=String(request.body?.action||''),targetId=String(request.body?.targetId||''),avatarId=String(request.body?.avatarId||'');
     if(!allowed.has(action))throw Object.assign(new Error('Invalid moderation action.'),{status:400});
     if(action!=='clearChat'&&!validId(targetId))throw Object.assign(new Error('Invalid moderation target.'),{status:400});
     const{db,auth}=getAdmin();const adminId=session.adminId||'primary-admin';let affectedUid=null;
@@ -64,6 +103,8 @@ export default async function handler(request,response){
       await deleteMessage(db,targetId,adminId);
     }else if(action==='clearChat'){
       const generations=await clearChat(db,adminId);return response.status(200).json({success:true,...generations});
+    }else if(action==='changeAvatar'){
+      const result=await changeAvatar(db,targetId,avatarId,adminId);return response.status(200).json({success:true,...result});
     }else if(action==='approve'||action==='reject'){
       await ensureIdentityPool(db);
       const registrationRef=db.doc(`registrations/${targetId}`);
@@ -77,7 +118,7 @@ export default async function handler(request,response){
           transaction.update(registrationRef,{status:'approved',approvedAt:FieldValue.serverTimestamp(),updatedAt:FieldValue.serverTimestamp(),rejectionReason:FieldValue.delete()});
           transaction.update(memberRef,{status:'approved',approved:true,banned:false,muted:false,approvedAt:FieldValue.serverTimestamp(),updatedAt:FieldValue.serverTimestamp()});
           transaction.set(db.doc(`chatMembers/${registration.uid}`),{name:registration.name,username:registration.username,language:registration.language,avatarId:registration.avatarId,avatar:registration.avatar,colorId:registration.colorId,senderColor:registration.senderColor,status:'approved',approved:true,banned:false,blocked:false,muted:false,role:'user',createdAt:memberSnap.data().createdAt,approvedAt:FieldValue.serverTimestamp(),updatedAt:FieldValue.serverTimestamp()});
-          transaction.set(db.doc('system/chatMeta'),{eligibleMemberIds:FieldValue.arrayUnion(registration.uid),updatedAt:FieldValue.serverTimestamp()},{merge:true});
+          transaction.set(db.doc('system/chatMeta'),{eligibleMemberIds:FieldValue.arrayUnion(registration.uid),identities:{[registration.uid]:{avatarId:registration.avatarId,avatar:registration.avatar,colorId:registration.colorId,senderColor:registration.senderColor}},updatedAt:FieldValue.serverTimestamp()},{merge:true});
           if(!chatStateSnap.exists)transaction.set(chatStateRef,{activeGeneration:1,createdAt:FieldValue.serverTimestamp(),updatedAt:FieldValue.serverTimestamp()});
         }else{
           const reason=safeReason(request.body?.reason);
@@ -85,10 +126,13 @@ export default async function handler(request,response){
           transaction.update(memberRef,{status:'rejected',approved:false,banned:false,muted:false,rejectedAt:FieldValue.serverTimestamp(),rejectionReason:reason||FieldValue.delete(),updatedAt:FieldValue.serverTimestamp()});
           if(usernameSnap.data()?.registrationId===targetId)transaction.set(usernameRef,{active:false,uid:registration.uid,registrationId:targetId,updatedAt:FieldValue.serverTimestamp()});
           if(phoneSnap.data()?.registrationId===targetId)transaction.set(phoneRef,{active:false,uid:registration.uid,registrationId:targetId,updatedAt:FieldValue.serverTimestamp()});
-          const assignment=assignmentSnap.data()||{},counts=assignment.colorCounts||{},avatarOwners={...(assignment.avatarOwners||{})};
-          if(avatarOwners[registration.avatarId]===targetId)delete avatarOwners[registration.avatarId];
+          const assignment=assignmentSnap.data()||{},counts=assignment.colorCounts||{},avatarOwners={...(assignment.avatarOwners||{})},avatarConflicts={...(assignment.avatarConflicts||{})};
+          if(avatarOwners[registration.avatarId]===targetId||avatarOwners[registration.avatarId]===registration.uid)delete avatarOwners[registration.avatarId];
+          const remaining=(avatarConflicts[registration.avatarId]||[]).filter((id)=>id!==registration.uid);
+          if(remaining.length>1)avatarConflicts[registration.avatarId]=remaining;
+          else{delete avatarConflicts[registration.avatarId];if(remaining.length===1)avatarOwners[registration.avatarId]=remaining[0];}
           const poolUpdate={colorCounts:{...counts,[registration.colorId]:Math.max(0,Number(counts[registration.colorId]||1)-1)}};
-          if(assignment.identityPoolVersion===1){poolUpdate.identityPoolVersion=1;poolUpdate.avatarOwners=avatarOwners;}
+          if(assignment.identityPoolVersion===1){poolUpdate.identityPoolVersion=1;poolUpdate.avatarOwners=avatarOwners;poolUpdate.avatarConflicts=avatarConflicts;}
           transaction.set(assignmentsRef,poolUpdate,{merge:true});
           transaction.set(db.doc(`presence/${registration.uid}`),{userId:registration.uid,online:false,heartbeatAt:FieldValue.serverTimestamp()},{merge:true});
         }

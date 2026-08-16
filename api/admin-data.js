@@ -1,6 +1,8 @@
 import { FieldPath, Timestamp } from 'firebase-admin/firestore';
 import { requireAdmin } from '../server/adminSession.js';
 import { getAdmin } from '../server/firebaseAdmin.js';
+import { ensureIdentityPool } from '../server/identityPool.js';
+import { AVATARS } from '../server/validators.js';
 
 const iso=(value)=>value?.toDate?.().toISOString?.()||null;
 const clean=(snapshot)=>{const d=snapshot.data();return{id:snapshot.id,...d,createdAt:iso(d.createdAt),updatedAt:iso(d.updatedAt),approvedAt:iso(d.approvedAt),rejectedAt:iso(d.rejectedAt),bannedAt:iso(d.bannedAt)};};
@@ -10,6 +12,21 @@ export default async function handler(request,response){
   if(request.method!=='GET')return response.status(405).json({error:'Method not allowed'});
   try{
     requireAdmin(request);const{db}=getAdmin();const section=String(request.query?.section||'dashboard');
+    if(section==='avatarPool'){
+      const targetId=String(request.query?.targetId||'');
+      if(!/^[A-Za-z0-9_-]{10,128}$/.test(targetId))return response.status(400).json({error:'Invalid user ID'});
+      await ensureIdentityPool(db);
+      const [targetSnap,membersSnap]=await Promise.all([
+        db.doc(`members/${targetId}`).get(),
+        db.collection('members').where('avatarId','in',AVATARS).get(),
+      ]);
+      if(!targetSnap.exists)return response.status(404).json({error:'User not found'});
+      const target=targetSnap.data(),active=(member)=>member.status==='pending'||member.status==='approved'||member.status==='banned'||member.approved===true||member.banned===true;
+      const usage=Object.fromEntries(AVATARS.map((id)=>[id,[]]));
+      membersSnap.forEach((snapshot)=>{const member=snapshot.data();if(active(member))usage[member.avatarId].push({id:snapshot.id,name:member.name,username:member.username});});
+      const avatars=AVATARS.map((id)=>({id,url:`/avatars/${id}.svg`,status:id===target.avatarId?'current':usage[id].some((owner)=>owner.id!==targetId)?'in_use':'available',conflict:id===target.avatarId&&usage[id].some((owner)=>owner.id!==targetId),owners:usage[id]}));
+      return response.status(200).json({target:{id:targetId,name:target.name,avatarId:target.avatarId,avatar:target.avatar,senderColor:target.senderColor,colorId:target.colorId},avatars});
+    }
     if(section==='dashboard'){
       const registrations=db.collection('registrations'),members=db.collection('members');
       const cutoff=Timestamp.fromMillis(Date.now()-125000);

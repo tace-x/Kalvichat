@@ -41,7 +41,8 @@ export default async function handler(request, response) {
       if (assignment.identityPoolVersion !== 1) throw Object.assign(new Error('Identity pool is not initialized.'), { status:503, code:'identity-pool-unavailable' });
       const counts = assignment.colorCounts || {};
       const avatarOwners = assignment.avatarOwners || {};
-      const availableAvatars = AVATARS.filter((id) => !avatarOwners[id]);
+      const avatarConflicts = assignment.avatarConflicts || {};
+      const availableAvatars = AVATARS.filter((id) => !avatarOwners[id] && !avatarConflicts[id]?.length);
       if (!availableAvatars.length) throw Object.assign(new Error('All profile avatars are currently assigned. Please contact the administrator.'), { status:409, code:'avatar-pool-exhausted' });
       const avatarId = availableAvatars[crypto.randomInt(availableAvatars.length)];
       const minimum = Math.min(...COLORS.map((color) => Number(counts[color.id] || 0)));
