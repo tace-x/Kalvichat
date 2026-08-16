@@ -72,7 +72,7 @@ export function useChat(user) {
       if (deleted.size) setMessages((old) => old.map((message) => {
         const replyTo = message.replyTo && deleted.has(message.replyTo.id) ? { id:message.replyTo.id, deleted:true } : message.replyTo;
         return deleted.has(message.id)
-          ? { ...message, originalText:null, hinglishText:null, manglishText:null, detectedLanguage:null, translationStatus:'deleted', deleted:true, deletedByAdmin:true, reactions:{}, replyTo }
+          ? { ...message, originalText:null, englishText:null, hinglishText:null, manglishText:null, detectedLanguage:null, translationStatus:'deleted', deleted:true, deletedByAdmin:true, reactions:{}, replyTo }
           : { ...message, replyTo };
       }));
     }, () => setError('Chat state is temporarily unavailable.'));
@@ -206,7 +206,7 @@ export function useChat(user) {
     const previous = messagesRef.current.find((message) => message.id === id);
     setMessages((old) => old.map((message) => message.id === id ? {
       ...message, originalText: text, edited: true, editedAt: new Date(), updatedAt: new Date(),
-      translationStatus: 'pending', hinglishText: null, manglishText: null,
+      translationStatus: 'pending', englishText:null, hinglishText: null, manglishText: null,
     } : message));
     if (firebaseEnabled) {
       try { await api.editMessage(id, text); requestTranslation(id); }
