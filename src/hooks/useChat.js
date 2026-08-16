@@ -240,14 +240,17 @@ export function useChat(user) {
 
   const eligible = useMemo(() => members.filter((member) => member.approved && !member.banned && !member.blocked && member.role !== 'admin'), [members]);
   const states = useMemo(() => new Map(readStates.map((state) => [state.id, state])), [readStates]);
+  const identities = useMemo(() => new Map(members.map((member) => [member.id, member])), [members]);
   const displayMessages = useMemo(() => messages.map((message) => {
-    if (message.senderId !== user?.id || !firebaseEnabled) return message;
+    const identity=identities.get(message.senderId);
+    const resolved=identity?{...message,senderAvatar:identity.avatar||message.senderAvatar,senderColor:identity.senderColor||message.senderColor}:message;
+    if (message.senderId !== user?.id || !firebaseEnabled) return resolved;
     const others = eligible.filter((member) => member.id !== user.id);
     const created = +new Date(message.createdAt);
     const allRead = others.length > 0 && others.every((member) => millis(states.get(member.id)?.readThrough) >= created);
     const allDelivered = others.length > 0 && others.every((member) => millis(states.get(member.id)?.deliveredThrough) >= created);
-    return { ...message, status: allRead ? 'read' : allDelivered ? 'delivered' : message.status === 'queued' ? 'queued' : 'sent' };
-  }), [messages, eligible, states, user]);
+    return { ...resolved, status: allRead ? 'read' : allDelivered ? 'delivered' : message.status === 'queued' ? 'queued' : 'sent' };
+  }), [messages, eligible, identities, states, user]);
 
   return { messages: displayMessages, loadOlder, hasOlder, loadingOlder, error, send, react, edit, remove, markRead, unreadAfter };
 }
