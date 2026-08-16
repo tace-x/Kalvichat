@@ -49,7 +49,7 @@ function Status({message}){
 
 const Message= memo(function Message({message,firstInStreak,showTime,onReact,onAction,currentUserId,muted}){
   const own=message.senderId===currentUserId, deleted=Boolean(message.deleted || message.deletedAt);
-  const translation=message.detectedLanguage==='manglish'?message.hinglishText:message.manglishText;
+  const translation=message.englishText||(message.detectedLanguage==='manglish'?message.hinglishText:message.manglishText);
   const identityColor=message.senderColor||message.color||'#397987';
   return <article className={`message-row ${own?'own':''} ${firstInStreak?'streak-start':''}`} style={{'--identity':identityColor}} data-message-id={message.id} data-created-at={new Date(message.createdAt).getTime()}>
     {!own&&<div className="avatar-slot">{firstInStreak&&<img src={message.senderAvatar||message.avatar} alt={`${message.senderName}'s avatar`}/>}</div>}
