@@ -18,7 +18,7 @@ async function deleteMessage(db,messageId,adminId){
     if(message.deleted||message.deletedByAdmin)throw Object.assign(new Error('Message is already deleted.'),{status:409});
     const recent=[...(stateSnap.data()?.recentDeletedMessageIds||[]).filter((id)=>id!==messageId),messageId].slice(-50);
     transaction.update(messageRef,{
-      originalText:FieldValue.delete(),hinglishText:FieldValue.delete(),manglishText:FieldValue.delete(),translation:FieldValue.delete(),translationText:FieldValue.delete(),
+      originalText:FieldValue.delete(),englishText:FieldValue.delete(),hinglishText:FieldValue.delete(),manglishText:FieldValue.delete(),translation:FieldValue.delete(),translationText:FieldValue.delete(),
       detectedLanguage:FieldValue.delete(),translatedAt:FieldValue.delete(),translationLeaseUntil:FieldValue.delete(),translationProvider:FieldValue.delete(),translationModel:FieldValue.delete(),translationError:FieldValue.delete(),
       translationStatus:'deleted',deleted:true,deletedByAdmin:true,deletedAt:FieldValue.serverTimestamp(),updatedAt:FieldValue.serverTimestamp(),
     });
