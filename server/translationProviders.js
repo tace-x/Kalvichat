@@ -10,25 +10,26 @@ function parseJson(text) {
   return JSON.parse(cleaned.slice(start, end + 1));
 }
 
-function promptFor(text) {
-  return `You translate casual private-chat messages between romanized Malayalam (Manglish) and romanized Hindi (Hinglish). English loan words inside either language do not make it English. Preserve names, emojis, punctuation, slang, tone and meaning. Never translate pure English. Return JSON only: {"detectedLanguage":"english|hinglish|manglish","translation":"", "confidence":0.0}. For Hinglish output natural Manglish. For Manglish output natural Hinglish. For English use an empty translation. Message:\n${JSON.stringify(text)}`;
+function promptFor(text,detection) {
+  const hint=detection?`${detection.detectedLanguage} (${Math.round(detection.confidence*100)}% local confidence)`:'unknown';
+  return `Translate one informal private-chat message into natural conversational English. The source may be Manglish (romanized Malayalam), Hinglish (romanized Hindi), Tanglish (romanized Tamil), Telglish (romanized Telugu), Kanglish (romanized Kannada), mixed English plus phonetic Indian language, slang, abbreviations, or misspelled phonetic text. Infer intent from context and tolerate repeated/missing/swapped vowels, missing spaces, repeated letters and punctuation. Preserve names, emojis, personality and tone. If the input is genuinely English, do not translate it. Do not add explanations. Return JSON only because the API contract requires it: {"detectedLanguage":"english|hinglish|manglish|tanglish|telglish|kanglish|mixed|unknown","translation":"natural English text or empty for English","confidence":0.0}. Local hint: ${hint}. Message:\n${JSON.stringify(text)}`;
 }
 
-async function gemini(text) {
+async function gemini(text,detection) {
   const key = process.env.GEMINI_API_KEY;
   if (!key) return null;
-  const model = process.env.GEMINI_MODEL || 'gemini-2.0-flash';
+  const model = process.env.GEMINI_MODEL || 'gemini-3.5-flash';
   const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent?key=${encodeURIComponent(key)}`, {
     method: 'POST', headers: { 'content-type': 'application/json' }, signal: AbortSignal.timeout(8000),
-    body: JSON.stringify({ contents: [{ parts: [{ text: promptFor(text) }] }], generationConfig: { temperature: 0.15, responseMimeType: 'application/json' } }),
+    body: JSON.stringify({ contents: [{ parts: [{ text: promptFor(text,detection) }] }], generationConfig: { temperature: 0.15, responseMimeType: 'application/json' } }),
   });
   if (!response.ok) throw new Error(`Gemini ${response.status}`);
   return parseJson((await response.json()).candidates?.[0]?.content?.parts?.[0]?.text || '');
 }
 
-async function openAICompatible({ name, key, url, model, jsonMode = true }, text) {
+async function openAICompatible({ name, key, url, model, jsonMode = true }, text,detection) {
   if (!key) return null;
-  const payload = { model, temperature: 0.15, messages: [{ role: 'user', content: promptFor(text) }] };
+  const payload = { model, temperature: 0.15, messages: [{ role: 'user', content: promptFor(text,detection) }] };
   if (jsonMode) payload.response_format = { type: 'json_object' };
   const response = await fetch(url, {
     method: 'POST', headers: { 'content-type': 'application/json', authorization: `Bearer ${key}` }, signal: AbortSignal.timeout(8000),
@@ -40,27 +41,27 @@ async function openAICompatible({ name, key, url, model, jsonMode = true }, text
 
 const providers = {
   gemini,
-  groq: (text) => openAICompatible({ name:'Groq', key:process.env.GROQ_API_KEY, url:'https://api.groq.com/openai/v1/chat/completions', model:process.env.GROQ_MODEL || 'llama-3.3-70b-versatile' }, text),
-  nvidia: (text) => openAICompatible({ name:'NVIDIA', key:process.env.NVIDIA_API_KEY, url:'https://integrate.api.nvidia.com/v1/chat/completions', model:process.env.NVIDIA_MODEL || 'meta/llama-3.1-70b-instruct', jsonMode:false }, text),
+  groq: (text,detection) => openAICompatible({ name:'Groq', key:process.env.GROQ_API_KEY, url:'https://api.groq.com/openai/v1/chat/completions', model:process.env.GROQ_MODEL || 'llama-3.3-70b-versatile' }, text,detection),
+  nvidia: (text,detection) => openAICompatible({ name:'NVIDIA', key:process.env.NVIDIA_API_KEY, url:'https://integrate.api.nvidia.com/v1/chat/completions', model:process.env.NVIDIA_MODEL || 'meta/llama-3.1-70b-instruct', jsonMode:false }, text,detection),
 };
 
 const emojiPattern = /\p{Extended_Pictographic}/gu;
 function valid(result, source) {
-  if (!['english','hinglish','manglish'].includes(result?.detectedLanguage)) return false;
+  if (!['english','hinglish','manglish','tanglish','telglish','kanglish','mixed','unknown'].includes(result?.detectedLanguage)) return false;
   if (result.detectedLanguage !== 'english' && !result.translation?.trim()) return false;
   const sourceEmoji = source.match(emojiPattern) || [];
   const targetEmoji = (result.translation || '').match(emojiPattern) || [];
   return sourceEmoji.join('') === targetEmoji.join('');
 }
 
-export async function routeTranslation(text) {
+export async function routeTranslation(text,detection) {
   // Short casual text uses the efficient configured model first; complex text prefers Gemini.
   const order = text.length > 240 ? ['gemini','groq','nvidia'] : ['groq','gemini','nvidia'];
   let lastError;
   for (const name of order) {
     if (coolingDown(name)) continue;
     try {
-      const result = await providers[name](text);
+      const result = await providers[name](text,detection);
       if (!result) continue;
       if (!valid(result, text)) throw new Error(`${name} validation failed`);
       succeeded(name);
