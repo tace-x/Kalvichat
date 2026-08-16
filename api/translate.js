@@ -1,31 +1,10 @@
 import crypto from 'node:crypto';
 import { FieldValue, Timestamp } from 'firebase-admin/firestore';
 import { requireApprovedUser } from '../server/firebaseAdmin.js';
+import { detectLanguage } from '../server/languageDetection.js';
 import { routeTranslation } from '../server/translationProviders.js';
 
-const hinglishWords = new Set(['kya','kyun','kaise','kaisa','kaunsi','kaunsa','tum','tumhara','tumhari','aap','mera','meri','mujhe','ham','hum','hamara','hai','hain','hoon','nahi','kal','aaj','abhi','chalo','ja','jana','raha','rahi','bahut','accha','acha','theek','ghar','kaam','kar','karo','karna','wala','wali','se','ko','mein','par','aur','lekin','phir','kab','kidhar','kaun','yeh','woh','yaar','mast','bhai','mat','kyunki','thoda','zyada']);
-const manglishWords = new Set(['ninte','ente','namude','entha','enthanu','enthokke','enthokkeyaanu','evide','engane','eppo','aaru','njan','nee','ningal','avan','aval','aanu','alle','illa','undu','venam','venda','povam','pokunnu','varam','varunnu','naale','innu','ippo','mani','aanel','enikku','ninakku','konduvaram','kaanam','veedu','veetil','pani','cheyyam','cheyyunnu','pinne','pakshe','kollam','sheri','sughamano','sukham','eda','edi','machane','polichu','ishtam']);
-const trustedPhrases = new Map([
-  ['ninte hobbies enthokkeyaanu?', { detectedLanguage:'manglish', translation:'tumhari hobbies kya hain?', confidence:1 }],
-  ['tumhara favorite movie kaunsa hai?', { detectedLanguage:'hinglish', translation:'ninte favorite movie ethaanu?', confidence:1 }],
-]);
-const normalize = (text) => text.trim().toLowerCase().replace(/\s+/g, ' ');
 const exactHash = (text) => crypto.createHash('sha256').update(text).digest('hex');
-
-function localDetection(text) {
-  const normalized = normalize(text);
-  const trusted = trustedPhrases.get(normalized);
-  if (trusted) return trusted;
-  const words = normalized.match(/[a-z]+/g) || [];
-  const hi = words.filter((word) => hinglishWords.has(word)).length;
-  const ml = words.filter((word) => manglishWords.has(word)).length;
-  if (ml > hi) return { detectedLanguage:'manglish', confidence:ml >= 2 ? .99 : .9 };
-  if (hi > ml) return { detectedLanguage:'hinglish', confidence:hi >= 2 ? .99 : .9 };
-  // With no romanized Hindi/Malayalam markers, preserve the text as English.
-  // Loan words remain safe because any surrounding language marker wins above.
-  if (!hi && !ml) return { detectedLanguage:'english', translation:'', confidence:.98 };
-  return null;
-}
 
 export default async function handler(request, response) {
   response.setHeader('Cache-Control', 'no-store');
@@ -58,19 +37,24 @@ export default async function handler(request, response) {
     });
     if (!leased) return response.status(202).json({ status: 'processing' });
 
-    const locallyDetected = localDetection(original);
-    const memoryRef = db.doc(`translationMemory/${exactHash(original)}`);
+    const detection = detectLanguage(original);
+    const normalizedSource=detection.normalizedText||original.trim().toLowerCase();
+    const memoryRef = db.doc(`translationMemory/${exactHash(normalizedSource)}`);
     let result;
-    // Strong English detection happens before any memory read or AI request.
-    if (locallyDetected?.detectedLanguage === 'english') {
-      result = locallyDetected;
+    // Only high-confidence English bypasses memory/providers. Unknown and mixed
+    // Latin-script chat deliberately continues to translation routing.
+    if (detection.detectedLanguage === 'english' && detection.shouldTranslate === false) {
+      result = detection;
     } else {
       const memory = await memoryRef.get();
-      if (memory.exists && memory.data().trusted === true && memory.data().source === original) {
-        result = { ...memory.data(), fromMemory: true };
+      const saved = memory.data();
+      const reusable = memory.exists && saved?.trusted === true
+        && (saved?.normalizedSource === normalizedSource || saved?.source === original)
+        && saved?.targetLanguage === 'english' && typeof saved?.translation === 'string' && saved.translation.trim();
+      if (reusable) {
+        result = { ...saved, detectedLanguage:saved.sourceLanguage||detection.detectedLanguage, fromMemory:true };
       } else {
-        result = locallyDetected;
-        if (!result || !result.translation) result = await routeTranslation(original);
+        result = await routeTranslation(original,detection);
       }
     }
 
@@ -78,10 +62,9 @@ export default async function handler(request, response) {
       detectedLanguage: result.detectedLanguage,
       translationStatus: result.detectedLanguage === 'english' ? 'none' : 'complete',
       translatedAt: FieldValue.serverTimestamp(), translationLeaseUntil: FieldValue.delete(),
-      hinglishText: FieldValue.delete(), manglishText: FieldValue.delete(),
+      englishText: FieldValue.delete(), hinglishText: FieldValue.delete(), manglishText: FieldValue.delete(),
     };
-    if (result.detectedLanguage === 'hinglish') update.manglishText = result.translation;
-    if (result.detectedLanguage === 'manglish') update.hinglishText = result.translation;
+    if (result.detectedLanguage !== 'english') update.englishText = result.translation;
     const applied = await db.runTransaction(async (transaction) => {
       const [fresh,state] = await Promise.all([transaction.get(messageRef),transaction.get(db.doc('system/chatState'))]);
       const value=fresh.data(),generation=Number(state.data()?.activeGeneration||1);
@@ -92,9 +75,10 @@ export default async function handler(request, response) {
 
     // Only validated high-confidence results become shared exact memory.
     if (!result.fromMemory && result.detectedLanguage !== 'english' && result.confidence >= .95) {
-      await memoryRef.set({ source:original, detectedLanguage:result.detectedLanguage, translation:result.translation, confidence:result.confidence, trusted:true, provider:result.provider || 'curated', updatedAt:FieldValue.serverTimestamp() });
+      await memoryRef.set({ source:original, normalizedSource, sourceLanguage:result.detectedLanguage, targetLanguage:'english', translation:result.translation, confidence:result.confidence, trusted:true, provider:result.provider, updatedAt:FieldValue.serverTimestamp() });
     }
-    return response.status(200).json({ status:update.translationStatus, detectedLanguage:result.detectedLanguage, cached:Boolean(result.fromMemory) });
+    const source=result.fromMemory?'memory':(result.provider||'local');
+    return response.status(200).json({ status:update.translationStatus, detectedLanguage:result.detectedLanguage, cached:Boolean(result.fromMemory), source });
   } catch (error) {
     console.error('Translation failed:', error);
     if (messageRef) await messageRef.update({ translationStatus:'failed', translationLeaseUntil:FieldValue.delete() }).catch(() => {});
