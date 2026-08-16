@@ -1,11 +1,12 @@
 import { detectLanguage } from '../server/languageDetection.js';
-import { getProviderTimeoutMs, routeTranslation } from '../server/translationProviders.js';
+import { getProviderBudgetMs, getProviderTimeoutMs, routeTranslation } from '../server/translationProviders.js';
 
 const keyConfigured=Boolean(process.env.GEMINI_API_KEY);
 const model=process.env.GEMINI_MODEL||'gemini-3.5-flash';
 console.log(`GEMINI_API_KEY=${keyConfigured?'configured':'missing'}`);
 console.log(`GEMINI_MODEL=${model}`);
 console.log(`TRANSLATION_PROVIDER_TIMEOUT_MS=${getProviderTimeoutMs()}`);
+console.log(`TRANSLATION_PROVIDER_BUDGET_MS=${getProviderBudgetMs()}`);
 if(!keyConfigured)process.exitCode=1;
 else{
   const text='sughamaano?',detection=detectLanguage(text),startedAt=Date.now();
