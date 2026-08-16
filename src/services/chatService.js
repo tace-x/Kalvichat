@@ -158,8 +158,8 @@ export function subscribeChatState(callback, onError) {
 
 export function subscribeMembers(callback, onError) {
   return onSnapshot(doc(db, 'system', 'chatMeta'), (snapshot) => {
-    const ids = snapshot.data()?.eligibleMemberIds || [];
-    callback(ids.map((id) => ({ id, approved: true, banned: false, blocked: false, role: 'user' })));
+    const value=snapshot.data()||{},ids=value.eligibleMemberIds||[],identities=value.identities||{};
+    callback(ids.map((id) => ({ id, ...(identities[id]||{}), approved:true, banned:false, blocked:false, role:'user' })));
   }, onError);
 }
 export function subscribeReadStates(callback, onError) {

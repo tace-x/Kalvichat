@@ -24,9 +24,9 @@ export const logout=()=>auth?signOut(auth):Promise.resolve();
 export async function adminSession(){const r=await fetch('/api/admin-session',{credentials:'same-origin'});return r.ok;}
 export const adminLogin=(username,password)=>post('/api/admin-login',{username,password});
 export const adminLogout=()=>post('/api/admin-logout',{});
-export async function adminData(section,cursor){
-  const query=new URLSearchParams({section});if(cursor)query.set('cursor',cursor);
+export async function adminData(section,cursor,targetId){
+  const query=new URLSearchParams({section});if(cursor)query.set('cursor',cursor);if(targetId)query.set('targetId',targetId);
   const r=await fetch(`/api/admin-data?${query}`,{credentials:'same-origin'});const data=await r.json().catch(()=>({}));
   if(!r.ok)throw Object.assign(new Error(data.error||'Could not load data.'),{status:r.status});return data;
 }
-export const adminAction=(action,targetId,reason='')=>post('/api/admin-action',{action,targetId,reason});
+export const adminAction=(action,targetId,reason='',avatarId='')=>post('/api/admin-action',{action,targetId,reason,avatarId});
