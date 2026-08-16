@@ -858,6 +858,10 @@ select {
 }
 
 .avatar-picker {
+  position: relative;
+  z-index: 31;
+  isolation: isolate;
+  pointer-events: auto;
   width: min(760px, calc(100vw - 28px));
   max-height: min(86dvh, 760px);
   overflow: auto;
@@ -922,7 +926,10 @@ select {
 }
 
 .avatar-pool {
+  position: relative;
+  z-index: 2;
   display: grid;
+  pointer-events: auto;
   grid-template-columns: repeat(auto-fit, minmax(104px, 1fr));
   gap: 11px;
 }

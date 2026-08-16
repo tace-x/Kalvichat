@@ -16,15 +16,15 @@ const REACTIONS=['👍','❤️','😂','😮','😢','🔥','👏','🎉','😍
 const timeFmt=new Intl.DateTimeFormat([], {hour:'numeric',minute:'2-digit'});
 const dayFmt=new Intl.DateTimeFormat([], {weekday:'long',month:'short',day:'numeric'});
 const minuteKey=d=>{const x=new Date(d);return `${x.getFullYear()}-${x.getMonth()}-${x.getDate()}-${x.getHours()}-${x.getMinutes()}`};
-const initialTheme=()=>{try{return localStorage.getItem('mj-theme')||'light'}catch{return 'light'}};
-const persistTheme=(theme)=>{try{localStorage.setItem('mj-theme',theme)}catch{/* Theme remains usable when storage is blocked. */}};
+const initialTheme=()=>{try{return localStorage.getItem('kalvi-theme')||'light'}catch{return 'light'}};
+const persistTheme=(theme)=>{try{localStorage.setItem('kalvi-theme',theme)}catch{/* Theme remains usable when storage is blocked. */}};
 
 function Icon({name}) { const icons={sun:'☼',moon:'◐',down:'↓',back:'←',send:'➤',more:'•••',reply:'↩'}; return <span aria-hidden="true">{icons[name]}</span> }
 
 const Header=memo(function Header({theme,setTheme,anyoneOnline,onLogout}){
   return <header className="header glass">
-    <div className="brand-mark" aria-hidden="true">M</div>
-    <div className="title-wrap"><h1>MALLU JAABI</h1><span className="handshake">🤝</span></div>
+    <div className="brand-mark" aria-hidden="true">K</div>
+    <div className="title-wrap"><h1>KALVI CHAT</h1><span className="handshake">🤍</span></div>
     <div className="header-actions">{anyoneOnline&&<span className="presence-dot" title="Friends are online" />}
       <button className="icon-button" aria-label={`Switch to ${theme==='light'?'dark':'light'} mode`} onClick={()=>setTheme(theme==='light'?'dark':'light')}><Icon name={theme==='light'?'moon':'sun'}/></button>
       {onLogout&&<button className="icon-button logout-icon" aria-label="Logout" onClick={onLogout}>↪</button>}
@@ -141,7 +141,7 @@ const Composer=memo(function Composer({onSend,reply,onCancelReply,editing,onCanc
 });
 
 function SessionState({status,error}){
-  return <div className="session-state"><div className="brand-mark">M</div><h1>MALLU JAABI</h1>{status==='loading'?<><span className="spinner"/><p>Verifying your session…</p></>:<p>{error||'Authentication is temporarily unavailable.'}</p>}</div>
+  return <div className="session-state"><div className="brand-mark">K</div><h1>KALVI CHAT 🤍</h1>{status==='loading'?<><span className="spinner"/><p>Verifying your session…</p></>:<p>{error||'Authentication is temporarily unavailable.'}</p>}</div>
 }
 
 function UserApp(){
