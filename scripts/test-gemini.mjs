@@ -1,5 +1,5 @@
 import { detectLanguage } from '../server/languageDetection.js';
-import { getProviderBudgetMs, getProviderTimeoutMs, routeTranslation } from '../server/translationProviders.js';
+import { diagnoseProvider, getProviderBudgetMs, getProviderTimeoutMs } from '../server/translationProviders.js';
 
 const keyConfigured=Boolean(process.env.GEMINI_API_KEY);
 const model=process.env.GEMINI_MODEL||'gemini-3.5-flash';
@@ -11,7 +11,7 @@ if(!keyConfigured)process.exitCode=1;
 else{
   const text='sughamaano?',detection=detectLanguage(text),startedAt=Date.now();
   try{
-    const result=await routeTranslation(text,detection);
+    const result=await diagnoseProvider('gemini',text,detection);
     console.log(JSON.stringify({status:'success',provider:result.provider,detectedLanguage:result.detectedLanguage,durationMs:Date.now()-startedAt,responseValid:Boolean(result.translation?.trim())}));
   }catch(error){
     console.error(JSON.stringify({status:'failed',model,durationMs:Date.now()-startedAt,error:error?.name||'Error',message:String(error?.message||'Translation failed').replace(/key=[^&\s]+/g,'key=REDACTED')}));
