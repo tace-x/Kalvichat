@@ -9,7 +9,7 @@ const payload=(provider)=>provider==='gemini'
 const response=(provider,status=200)=>({ok:status>=200&&status<300,status,json:async()=>payload(provider)});
 
 let sequence=0;
-async function loadRouter({gemini=true,nvidia=true,groq=true,timeout=7000,budget=18000}={}){
+async function loadRouter({gemini=true,nvidia=true,groq=true,timeout=10000,budget=20000}={}){
   process.env.GEMINI_API_KEY=gemini?'gemini-secret-for-test':'';
   process.env.NVIDIA_API_KEY=nvidia?'nvidia-secret-for-test':'';
   process.env.GROQ_API_KEY=groq?'groq-secret-for-test':'';
@@ -79,6 +79,15 @@ test('overall budget bounds sequential hanging providers',async()=>{
   globalThis.fetch=async(_url,{signal})=>new Promise((_,reject)=>{const keepAlive=setTimeout(()=>{},5000);signal.addEventListener('abort',()=>{clearTimeout(keepAlive);reject(signal.reason)},{once:true});});
   const {logs}=await captureLogs(async()=>{await assert.rejects(()=>routeTranslation('sughamaano?',detection));});
   const elapsed=Date.now()-started;assert.equal(getProviderBudgetMs(),8000);assert.ok(elapsed<8000,`elapsed ${elapsed}`);assert.match(logs.join('\n'),/error=timeout/);
+});
+
+test('configured fallbacks receive meaningful independent attempt windows',async()=>{
+  const {routeTranslation}=await loadRouter();const windows=[],originalTimeout=AbortSignal.timeout;
+  AbortSignal.timeout=(duration)=>{windows.push(duration);return new AbortController().signal};
+  globalThis.fetch=async(url)=>response(providerName(String(url)),503);
+  try{await captureLogs(async()=>{await assert.rejects(()=>routeTranslation('fallback allocation',detection));});}
+  finally{AbortSignal.timeout=originalTimeout;}
+  assert.equal(windows.length,4);assert.equal(windows[0],10000);assert.equal(windows[1],3000);assert.ok(windows[2]>=9000);assert.ok(windows[3]>=2500);
 });
 
 test('fresh request still attempts providers after previous request exhausts all providers',async()=>{
