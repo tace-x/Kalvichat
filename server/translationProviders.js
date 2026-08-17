@@ -1,8 +1,9 @@
 // Provider health is intentionally request-scoped. A module-level cooldown would
 // persist in a warm serverless instance and let one failed message poison later ones.
-const DEFAULT_PROVIDER_TIMEOUT_MS = 7_000;
-const DEFAULT_PROVIDER_BUDGET_MS = 18_000;
+const DEFAULT_PROVIDER_TIMEOUT_MS = 10_000;
+const DEFAULT_PROVIDER_BUDGET_MS = 20_000;
 const MIN_ATTEMPT_WINDOW_MS = 750;
+const RESERVED_FALLBACK_WINDOW_MS = 2_500;
 const GEMINI_RETRY_TIMEOUT_MS = 3_000;
 const GEMINI_RETRY_DELAY_MS = 120;
 const GEMINI_RETRY_CATEGORIES = new Set(['transient_http','rate_limited','network_error']);
@@ -10,13 +11,13 @@ const GEMINI_RETRY_CATEGORIES = new Set(['transient_http','rate_limited','networ
 export function getProviderTimeoutMs() {
   const configured=Number(process.env.TRANSLATION_PROVIDER_TIMEOUT_MS);
   if(!Number.isFinite(configured))return DEFAULT_PROVIDER_TIMEOUT_MS;
-  return Math.min(10_000,Math.max(2_000,Math.round(configured)));
+  return Math.min(12_000,Math.max(2_000,Math.round(configured)));
 }
 
 export function getProviderBudgetMs() {
   const configured=Number(process.env.TRANSLATION_PROVIDER_BUDGET_MS);
   if(!Number.isFinite(configured))return DEFAULT_PROVIDER_BUDGET_MS;
-  return Math.min(20_000,Math.max(8_000,Math.round(configured)));
+  return Math.min(22_000,Math.max(8_000,Math.round(configured)));
 }
 
 class ProviderError extends Error {
@@ -107,27 +108,34 @@ async function runAttempt(provider,text,detection,timeoutMs,retry) {
   }
 }
 
+const providerConfigured=(provider)=>Boolean(provider==='gemini'?process.env.GEMINI_API_KEY:provider==='nvidia'?process.env.NVIDIA_API_KEY:process.env.GROQ_API_KEY);
+
 export async function routeTranslation(text,detection) {
-  const order=['gemini','nvidia','groq'];
+  const order=['gemini','nvidia','groq'].filter(providerConfigured);
   const startedAt=Date.now(),providerTimeout=getProviderTimeoutMs(),budget=getProviderBudgetMs();
+  console.info(`[translation] provider=router model=none result=start budgetMs=${budget} timeoutMs=${providerTimeout} configured=${order.join(',')||'none'}`);
   let lastError;
 
-  for(const provider of order){
+  for(let index=0;index<order.length;index++){
+    const provider=order[index],laterProviders=order.length-index-1;
     let remaining=budget-(Date.now()-startedAt);
     if(remaining<MIN_ATTEMPT_WINDOW_MS)break;
+    const reservedForFallback=laterProviders*RESERVED_FALLBACK_WINDOW_MS;
+    const attemptWindow=Math.max(MIN_ATTEMPT_WINDOW_MS,remaining-reservedForFallback);
     try{
-      const attempt=await runAttempt(provider,text,detection,Math.min(providerTimeout,remaining),0);
+      const attempt=await runAttempt(provider,text,detection,Math.min(providerTimeout,attemptWindow),0);
       if(attempt.missing)continue;
       return{...attempt.result,confidence:Math.max(0,Math.min(1,Number(attempt.result.confidence)||0)),provider};
     }catch(error){
       lastError=error;
       const retryable=provider==='gemini'&&GEMINI_RETRY_CATEGORIES.has(error.category);
       remaining=budget-(Date.now()-startedAt);
-      if(retryable&&remaining>MIN_ATTEMPT_WINDOW_MS+GEMINI_RETRY_DELAY_MS){
+      let retryWindow=remaining-reservedForFallback;
+      if(retryable&&retryWindow>MIN_ATTEMPT_WINDOW_MS+GEMINI_RETRY_DELAY_MS){
         await wait(GEMINI_RETRY_DELAY_MS);
-        remaining=budget-(Date.now()-startedAt);
+        remaining=budget-(Date.now()-startedAt);retryWindow=remaining-reservedForFallback;
         try{
-          const retry=await runAttempt(provider,text,detection,Math.min(GEMINI_RETRY_TIMEOUT_MS,providerTimeout,remaining),1);
+          const retry=await runAttempt(provider,text,detection,Math.min(GEMINI_RETRY_TIMEOUT_MS,providerTimeout,retryWindow),1);
           if(!retry.missing){
             return{...retry.result,confidence:Math.max(0,Math.min(1,Number(retry.result.confidence)||0)),provider};
           }
