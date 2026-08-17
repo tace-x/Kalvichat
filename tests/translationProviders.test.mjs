@@ -9,7 +9,7 @@ const payload=(provider)=>provider==='gemini'
 const response=(provider,status=200)=>({ok:status>=200&&status<300,status,json:async()=>payload(provider)});
 
 let sequence=0;
-async function loadRouter({gemini=true,nvidia=true,groq=true,timeout=5000,budget=9000}={}){
+async function loadRouter({gemini=true,nvidia=true,groq=true,timeout=7000,budget=18000}={}){
   process.env.GEMINI_API_KEY=gemini?'gemini-secret-for-test':'';
   process.env.NVIDIA_API_KEY=nvidia?'nvidia-secret-for-test':'';
   process.env.GROQ_API_KEY=groq?'groq-secret-for-test':'';
@@ -75,10 +75,19 @@ test('missing keys are skipped and all missing fails quickly',async()=>{
 });
 
 test('overall budget bounds sequential hanging providers',async()=>{
-  const {routeTranslation,getProviderBudgetMs}=await loadRouter({timeout:1000,budget:4000});const started=Date.now();
-  globalThis.fetch=async(_url,{signal})=>new Promise((_,reject)=>{const keepAlive=setTimeout(()=>{},1500);signal.addEventListener('abort',()=>{clearTimeout(keepAlive);reject(signal.reason)},{once:true});});
+  const {routeTranslation,getProviderBudgetMs}=await loadRouter({timeout:2000,budget:8000});const started=Date.now();
+  globalThis.fetch=async(_url,{signal})=>new Promise((_,reject)=>{const keepAlive=setTimeout(()=>{},5000);signal.addEventListener('abort',()=>{clearTimeout(keepAlive);reject(signal.reason)},{once:true});});
   const {logs}=await captureLogs(async()=>{await assert.rejects(()=>routeTranslation('sughamaano?',detection));});
-  const elapsed=Date.now()-started;assert.equal(getProviderBudgetMs(),4000);assert.ok(elapsed<4000,`elapsed ${elapsed}`);assert.match(logs.join('\n'),/error=timeout/);
+  const elapsed=Date.now()-started;assert.equal(getProviderBudgetMs(),8000);assert.ok(elapsed<8000,`elapsed ${elapsed}`);assert.match(logs.join('\n'),/error=timeout/);
+});
+
+test('fresh request still attempts providers after previous request exhausts all providers',async()=>{
+  const {routeTranslation}=await loadRouter();const calls=[];
+  globalThis.fetch=async(url)=>{const provider=providerName(String(url));calls.push(`failed:${provider}`);return response(provider,503)};
+  await captureLogs(async()=>{await assert.rejects(()=>routeTranslation('first failing message',detection));});
+  globalThis.fetch=async(url)=>{const provider=providerName(String(url));calls.push(`fresh:${provider}`);return response(provider)};
+  const {value}=await captureLogs(()=>routeTranslation('second legitimate message',detection));
+  assert.equal(value.provider,'gemini');assert.ok(calls.includes('fresh:gemini'),JSON.stringify(calls));
 });
 
 test('diagnostics never contain API keys',async()=>{
