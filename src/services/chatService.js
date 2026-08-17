@@ -109,10 +109,12 @@ export async function requestTranslation(messageId) {
   const response = await fetch('/api/translate', {
     method: 'POST',
     headers: { 'content-type': 'application/json', authorization: `Bearer ${token}` },
+    signal:AbortSignal.timeout(15_000),
     body: JSON.stringify({ messageId }),
   });
-  if (!response.ok) throw new Error(`Translation request failed (${response.status}).`);
-  return response.json();
+  const payload=await response.json().catch(()=>({}));
+  if(!response.ok){const error=new Error(payload.error||`Translation request failed (${response.status}).`);error.status=response.status;throw error;}
+  return payload;
 }
 
 export async function editMessage(id, originalText) {
