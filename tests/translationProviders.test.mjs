@@ -2,8 +2,8 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 const detection={detectedLanguage:'manglish',confidence:.82,shouldTranslate:true};
-const providerName=(url)=>url.includes('googleapis.com')?(url.includes('gemma-')?'gemma':'gemini'):url.includes('nvidia.com')?'nvidia':'groq';
-const payload=(provider)=>['gemma','gemini'].includes(provider)
+const providerName=(url)=>url.includes('openrouter.ai')?'gemma':url.includes('googleapis.com')?'gemini':url.includes('nvidia.com')?'nvidia':'groq';
+const payload=(provider)=>provider==='gemini'
   ? {candidates:[{content:{parts:[{text:JSON.stringify({detectedLanguage:'manglish',translation:'How are you?',confidence:.99})}]}}]}
   : {choices:[{message:{content:JSON.stringify({detectedLanguage:'manglish',translation:'How are you?',confidence:.99})}}]};
 const response=(provider,status=200)=>({ok:status>=200&&status<300,status,json:async()=>payload(provider)});
@@ -26,11 +26,11 @@ async function captureLogs(run){
   try{return{value:await run(),logs};}finally{console.info=originalInfo;console.error=originalError;}
 }
 
-test('Gemma success stops all fallback providers',async()=>{
+test('Gemma uses OpenRouter and stops all fallback providers',async()=>{
   const {routeTranslation}=await loadRouter({gemma:true});const calls=[];
-  globalThis.fetch=async(url)=>{const provider=providerName(String(url));calls.push(provider);return response(provider)};
+  globalThis.fetch=async(url,options)=>{const provider=providerName(String(url));calls.push({provider,url:String(url),options});return response(provider)};
   const {value}=await captureLogs(()=>routeTranslation('sughamaano?',detection));
-  assert.equal(value.provider,'gemma');assert.deepEqual(calls,['gemma']);
+  assert.equal(value.provider,'gemma');assert.equal(calls.length,1);assert.equal(calls[0].provider,'gemma');assert.equal(calls[0].url,'https://openrouter.ai/api/v1/chat/completions');assert.equal(calls[0].options.headers.authorization,'Bearer gemma-secret-for-test');assert.equal(JSON.parse(calls[0].options.body).model,'gemma-test-model');
 });
 
 test('Gemma failure falls back to NVIDIA',async()=>{
@@ -47,11 +47,11 @@ test('Gemma and NVIDIA failure falls back to Gemini',async()=>{
   assert.equal(value.provider,'gemini');assert.deepEqual(calls,['gemma','gemma','nvidia','gemini']);
 });
 
-test('Gemma missing model is skipped without breaking NVIDIA fallback',async()=>{
-  const {routeTranslation}=await loadRouter({gemma:true,gemmaModel:'',gemini:false});const calls=[];
+test('Gemma missing key is skipped without breaking NVIDIA fallback',async()=>{
+  const {routeTranslation}=await loadRouter({gemma:false,gemini:false});const calls=[];
   globalThis.fetch=async(url)=>{const provider=providerName(String(url));calls.push(provider);return response(provider)};
-  const {value,logs}=await captureLogs(()=>routeTranslation('sughamaano?',detection));
-  assert.equal(value.provider,'nvidia');assert.deepEqual(calls,['nvidia']);assert.match(logs.join('\n'),/configuration_missing/);
+  const {value}=await captureLogs(()=>routeTranslation('sughamaano?',detection));
+  assert.equal(value.provider,'nvidia');assert.deepEqual(calls,['nvidia']);
 });
 
 test('invalid Gemma model response falls back safely',async()=>{
