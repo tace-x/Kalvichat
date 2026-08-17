@@ -3,10 +3,11 @@
 const DEFAULT_PROVIDER_TIMEOUT_MS = 10_000;
 const DEFAULT_PROVIDER_BUDGET_MS = 20_000;
 const MIN_ATTEMPT_WINDOW_MS = 750;
-const RESERVED_FALLBACK_WINDOW_MS = 2_500;
-const GEMINI_RETRY_TIMEOUT_MS = 3_000;
-const GEMINI_RETRY_DELAY_MS = 120;
-const GEMINI_RETRY_CATEGORIES = new Set(['transient_http','rate_limited','network_error']);
+const RESERVED_FALLBACK_WINDOW_MS = 3_000;
+const GOOGLE_RETRY_TIMEOUT_MS = 3_000;
+const GOOGLE_RETRY_DELAY_MS = 120;
+const GOOGLE_RETRY_PROVIDERS = new Set(['gemma','gemini']);
+const GOOGLE_RETRY_CATEGORIES = new Set(['transient_http','rate_limited','network_error']);
 
 export function getProviderTimeoutMs() {
   const configured=Number(process.env.TRANSLATION_PROVIDER_TIMEOUT_MS);
@@ -53,16 +54,19 @@ function promptFor(text,detection) {
   return `Translate one informal private-chat message into natural conversational English. The source may be Manglish (romanized Malayalam), Hinglish (romanized Hindi), Tanglish (romanized Tamil), Telglish (romanized Telugu), Kanglish (romanized Kannada), mixed English plus phonetic Indian language, slang, abbreviations, or misspelled phonetic text. Infer intent from context and tolerate repeated/missing/swapped vowels, missing spaces, repeated letters and punctuation. Preserve names, emojis, personality and tone. If the input is genuinely English, do not translate it. Do not add explanations. Return JSON only because the API contract requires it: {"detectedLanguage":"english|hinglish|manglish|tanglish|telglish|kanglish|mixed|unknown","translation":"natural English text or empty for English","confidence":0.0}. Local hint: ${hint}. Message:\n${JSON.stringify(text)}`;
 }
 
-const modelFor=(provider)=>provider==='gemini'
-  ? process.env.GEMINI_MODEL||'gemini-3.5-flash'
-  : provider==='nvidia'
-    ? process.env.NVIDIA_MODEL||'meta/llama-3.3-70b-instruct'
-    : process.env.GROQ_MODEL||'llama-3.3-70b-versatile';
+const modelFor=(provider)=>provider==='gemma'
+  ? process.env.GEMMA_MODEL||''
+  : provider==='gemini'
+    ? process.env.GEMINI_MODEL||'gemini-3.5-flash'
+    : provider==='nvidia'
+      ? process.env.NVIDIA_MODEL||'meta/llama-3.3-70b-instruct'
+      : process.env.GROQ_MODEL||'llama-3.3-70b-versatile';
 
-async function gemini(text,detection,timeoutMs) {
-  const key=process.env.GEMINI_API_KEY;if(!key)return null;
-  const model=modelFor('gemini');
-  const response=await providerFetch({provider:'gemini',model,timeoutMs,url:`https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent?key=${encodeURIComponent(key)}`,options:{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({contents:[{parts:[{text:promptFor(text,detection)}]}],generationConfig:{temperature:0.15,responseMimeType:'application/json'}})}});
+async function googleGenerate(provider,key,model,text,detection,timeoutMs,{jsonMode=true}={}) {
+  if(!key||!model)return null;
+  const generationConfig={temperature:0.15};
+  if(jsonMode)generationConfig.responseMimeType='application/json';
+  const response=await providerFetch({provider,model,timeoutMs,url:`https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent?key=${encodeURIComponent(key)}`,options:{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({contents:[{parts:[{text:promptFor(text,detection)}]}],generationConfig})}});
   return parseJson((await response.json()).candidates?.[0]?.content?.parts?.[0]?.text||'');
 }
 
@@ -75,8 +79,9 @@ async function openAICompatible({provider,key,url,model,jsonMode=true},text,dete
 }
 
 const providers={
-  gemini,
+  gemma:(text,detection,timeoutMs)=>googleGenerate('gemma',process.env.GEMMA_API_KEY,modelFor('gemma'),text,detection,timeoutMs,{jsonMode:false}),
   nvidia:(text,detection,timeoutMs)=>openAICompatible({provider:'nvidia',key:process.env.NVIDIA_API_KEY,url:'https://integrate.api.nvidia.com/v1/chat/completions',model:modelFor('nvidia'),jsonMode:false},text,detection,timeoutMs),
+  gemini:(text,detection,timeoutMs)=>googleGenerate('gemini',process.env.GEMINI_API_KEY,modelFor('gemini'),text,detection,timeoutMs),
   groq:(text,detection,timeoutMs)=>openAICompatible({provider:'groq',key:process.env.GROQ_API_KEY,url:'https://api.groq.com/openai/v1/chat/completions',model:modelFor('groq')},text,detection,timeoutMs),
 };
 
@@ -108,10 +113,20 @@ async function runAttempt(provider,text,detection,timeoutMs,retry) {
   }
 }
 
-const providerConfigured=(provider)=>Boolean(provider==='gemini'?process.env.GEMINI_API_KEY:provider==='nvidia'?process.env.NVIDIA_API_KEY:process.env.GROQ_API_KEY);
+const providerConfigured=(provider)=>provider==='gemma'
+  ? Boolean(process.env.GEMMA_API_KEY&&process.env.GEMMA_MODEL)
+  : Boolean(provider==='gemini'?process.env.GEMINI_API_KEY:provider==='nvidia'?process.env.NVIDIA_API_KEY:process.env.GROQ_API_KEY);
+
+export async function diagnoseProvider(provider,text,detection) {
+  if(!providers[provider]||!providerConfigured(provider))throw new ProviderError(`${provider} is not fully configured`,{provider,model:modelFor(provider)||'missing',category:'configuration_missing'});
+  const attempt=await runAttempt(provider,text,detection,getProviderTimeoutMs(),0);
+  if(attempt.missing)throw new ProviderError(`${provider} is not configured`,{provider,model:modelFor(provider)||'missing',category:'configuration_missing'});
+  return{...attempt.result,confidence:Math.max(0,Math.min(1,Number(attempt.result.confidence)||0)),provider};
+}
 
 export async function routeTranslation(text,detection) {
-  const order=['gemini','nvidia','groq'].filter(providerConfigured);
+  if((process.env.GEMMA_API_KEY&&!process.env.GEMMA_MODEL)||(!process.env.GEMMA_API_KEY&&process.env.GEMMA_MODEL))console.error('[translation] provider=gemma model=missing error=configuration_missing');
+  const order=['gemma','nvidia','gemini','groq'].filter(providerConfigured);
   const startedAt=Date.now(),providerTimeout=getProviderTimeoutMs(),budget=getProviderBudgetMs();
   console.info(`[translation] provider=router model=none result=start budgetMs=${budget} timeoutMs=${providerTimeout} configured=${order.join(',')||'none'}`);
   let lastError;
@@ -128,14 +143,14 @@ export async function routeTranslation(text,detection) {
       return{...attempt.result,confidence:Math.max(0,Math.min(1,Number(attempt.result.confidence)||0)),provider};
     }catch(error){
       lastError=error;
-      const retryable=provider==='gemini'&&GEMINI_RETRY_CATEGORIES.has(error.category);
+      const retryable=GOOGLE_RETRY_PROVIDERS.has(provider)&&GOOGLE_RETRY_CATEGORIES.has(error.category);
       remaining=budget-(Date.now()-startedAt);
       let retryWindow=remaining-reservedForFallback;
-      if(retryable&&retryWindow>MIN_ATTEMPT_WINDOW_MS+GEMINI_RETRY_DELAY_MS){
-        await wait(GEMINI_RETRY_DELAY_MS);
+      if(retryable&&retryWindow>MIN_ATTEMPT_WINDOW_MS+GOOGLE_RETRY_DELAY_MS){
+        await wait(GOOGLE_RETRY_DELAY_MS);
         remaining=budget-(Date.now()-startedAt);retryWindow=remaining-reservedForFallback;
         try{
-          const retry=await runAttempt(provider,text,detection,Math.min(GEMINI_RETRY_TIMEOUT_MS,providerTimeout,retryWindow),1);
+          const retry=await runAttempt(provider,text,detection,Math.min(GOOGLE_RETRY_TIMEOUT_MS,providerTimeout,retryWindow),1);
           if(!retry.missing){
             return{...retry.result,confidence:Math.max(0,Math.min(1,Number(retry.result.confidence)||0)),provider};
           }
