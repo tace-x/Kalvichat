@@ -54,6 +54,9 @@ export function useChat(user) {
   messagesRef.current = messages;
   const startRef = useRef(Math.max(0, DEMO_MESSAGES.length - api.PAGE_SIZE));
   const translationRequests = useRef(new Set());
+  const translationRetryTimers = useRef(new Map());
+  const translationAttempts = useRef(new Map());
+  const requestTranslationRef = useRef(null);
   const readTimer = useRef(null);
   const deliveredTimer = useRef(null);
   const pendingRead = useRef(0);
@@ -91,6 +94,7 @@ export function useChat(user) {
     return () => {
       stopState(); stopMembers(); stopReads(); window.removeEventListener('online', delivered);
       clearTimeout(readTimer.current); clearTimeout(deliveredTimer.current);
+      translationRetryTimers.current.forEach(clearTimeout);translationRetryTimers.current.clear();translationAttempts.current.clear();
     };
   }, [user?.id]);
 
@@ -131,16 +135,39 @@ export function useChat(user) {
   // newestKey intentionally stabilizes the ID-window dependency.
   }, [newestKey, user?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const requestTranslation = useCallback(async (id) => {
-    if (!firebaseEnabled || translationRequests.current.has(id)) return;
+  const requestTranslation = useCallback(async (id,networkAttempt=0) => {
+    if(!firebaseEnabled||translationRequests.current.has(id))return;
+    clearTimeout(translationRetryTimers.current.get(id));translationRetryTimers.current.delete(id);
     translationRequests.current.add(id);
-    try { await api.requestTranslation(id); }
-    catch { /* A reconnect or later listener pass retries pending translations. */ }
-    finally { translationRequests.current.delete(id); }
+    const schedule=(delay,nextAttempt)=>{
+      clearTimeout(translationRetryTimers.current.get(id));
+      const timer=window.setTimeout(()=>requestTranslationRef.current?.(id,nextAttempt),delay);
+      translationRetryTimers.current.set(id,timer);
+    };
+    try{
+      const result=await api.requestTranslation(id);
+      translationAttempts.current.delete(id);
+      if(result?.status==='processing')schedule(31_000,0);
+      else setMessages((old)=>old.map((message)=>message.id===id?{...message,_localTranslationFailure:false}:message));
+    }catch(error){
+      const attempt=Math.max(networkAttempt,translationAttempts.current.get(id)||0);
+      if(!error.status&&attempt<2){
+        translationAttempts.current.set(id,attempt+1);schedule((attempt+1)*4_000,attempt+1);
+      }else{
+        translationAttempts.current.delete(id);
+        setMessages((old)=>old.map((message)=>message.id===id&&['pending','processing'].includes(message.translationStatus)
+          ?{...message,translationStatus:'failed',_localTranslationFailure:!error.status}:message));
+      }
+    }finally{translationRequests.current.delete(id);}
   }, []);
+  requestTranslationRef.current=requestTranslation;
 
   useEffect(() => {
-    if (!firebaseEnabled || !navigator.onLine) return undefined;
+    if (!firebaseEnabled) return undefined;
+    messages.filter((message)=>['complete','failed','none','deleted'].includes(message.translationStatus)).forEach((message)=>{
+      clearTimeout(translationRetryTimers.current.get(message.id));translationRetryTimers.current.delete(message.id);translationAttempts.current.delete(message.id);
+    });
+    if(!navigator.onLine)return undefined;
     const pending = messages.filter((message) => message.translationStatus === 'pending' && !message.deleted).slice(-5);
     pending.forEach((message) => requestTranslation(message.id));
     const processing = messages.filter((message) => message.translationStatus === 'processing' && !message.deleted).slice(-5);
@@ -148,6 +175,16 @@ export function useChat(user) {
     const retry = window.setTimeout(() => processing.forEach((message) => requestTranslation(message.id)), 31_000);
     return () => clearTimeout(retry);
   }, [messages, requestTranslation]);
+
+  useEffect(()=>{
+    if(!firebaseEnabled)return undefined;
+    const retryAfterReconnect=()=>messagesRef.current.filter((message)=>!message.deleted&&(['pending','processing'].includes(message.translationStatus)||message._localTranslationFailure)).slice(-5).forEach((message)=>{
+      if(message._localTranslationFailure)setMessages((old)=>old.map((item)=>item.id===message.id?{...item,translationStatus:'pending',_localTranslationFailure:false}:item));
+      requestTranslation(message.id,0);
+    });
+    window.addEventListener('online',retryAfterReconnect);
+    return()=>window.removeEventListener('online',retryAfterReconnect);
+  },[requestTranslation]);
 
   const loadOlder = useCallback(async () => {
     if (loadingOlder || !hasOlder) return;
