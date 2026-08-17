@@ -55,7 +55,7 @@ function promptFor(text,detection) {
 }
 
 const modelFor=(provider)=>provider==='gemma'
-  ? process.env.GEMMA_MODEL||''
+  ? process.env.GEMMA_MODEL||'google/gemma-3-27b-it'
   : provider==='gemini'
     ? process.env.GEMINI_MODEL||'gemini-3.5-flash'
     : provider==='nvidia'
@@ -79,7 +79,7 @@ async function openAICompatible({provider,key,url,model,jsonMode=true},text,dete
 }
 
 const providers={
-  gemma:(text,detection,timeoutMs)=>googleGenerate('gemma',process.env.GEMMA_API_KEY,modelFor('gemma'),text,detection,timeoutMs,{jsonMode:false}),
+  gemma:(text,detection,timeoutMs)=>openAICompatible({provider:'gemma',key:process.env.GEMMA_API_KEY,url:'https://openrouter.ai/api/v1/chat/completions',model:modelFor('gemma'),jsonMode:false},text,detection,timeoutMs),
   nvidia:(text,detection,timeoutMs)=>openAICompatible({provider:'nvidia',key:process.env.NVIDIA_API_KEY,url:'https://integrate.api.nvidia.com/v1/chat/completions',model:modelFor('nvidia'),jsonMode:false},text,detection,timeoutMs),
   gemini:(text,detection,timeoutMs)=>googleGenerate('gemini',process.env.GEMINI_API_KEY,modelFor('gemini'),text,detection,timeoutMs),
   groq:(text,detection,timeoutMs)=>openAICompatible({provider:'groq',key:process.env.GROQ_API_KEY,url:'https://api.groq.com/openai/v1/chat/completions',model:modelFor('groq')},text,detection,timeoutMs),
@@ -114,7 +114,7 @@ async function runAttempt(provider,text,detection,timeoutMs,retry) {
 }
 
 const providerConfigured=(provider)=>provider==='gemma'
-  ? Boolean(process.env.GEMMA_API_KEY&&process.env.GEMMA_MODEL)
+  ? Boolean(process.env.GEMMA_API_KEY)
   : Boolean(provider==='gemini'?process.env.GEMINI_API_KEY:provider==='nvidia'?process.env.NVIDIA_API_KEY:process.env.GROQ_API_KEY);
 
 export async function diagnoseProvider(provider,text,detection) {
@@ -125,7 +125,7 @@ export async function diagnoseProvider(provider,text,detection) {
 }
 
 export async function routeTranslation(text,detection) {
-  if((process.env.GEMMA_API_KEY&&!process.env.GEMMA_MODEL)||(!process.env.GEMMA_API_KEY&&process.env.GEMMA_MODEL))console.error('[translation] provider=gemma model=missing error=configuration_missing');
+  if(!process.env.GEMMA_API_KEY&&process.env.GEMMA_MODEL)console.error('[translation] provider=gemma model=missing_key error=configuration_missing');
   const order=['gemma','nvidia','gemini','groq'].filter(providerConfigured);
   const startedAt=Date.now(),providerTimeout=getProviderTimeoutMs(),budget=getProviderBudgetMs();
   console.info(`[translation] provider=router model=none result=start budgetMs=${budget} timeoutMs=${providerTimeout} configured=${order.join(',')||'none'}`);
