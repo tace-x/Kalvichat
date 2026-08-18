@@ -1,13 +1,14 @@
 // Provider health is intentionally request-scoped. A module-level cooldown would
 // persist in a warm serverless instance and let one failed message poison later ones.
 const DEFAULT_PROVIDER_TIMEOUT_MS = 10_000;
-const DEFAULT_PROVIDER_BUDGET_MS = 20_000;
+const DEFAULT_PROVIDER_BUDGET_MS = 18_000;
 const MIN_ATTEMPT_WINDOW_MS = 750;
 const RESERVED_FALLBACK_WINDOW_MS = 3_000;
 const GOOGLE_RETRY_TIMEOUT_MS = 3_000;
 const GOOGLE_RETRY_DELAY_MS = 120;
 const GOOGLE_RETRY_PROVIDERS = new Set(['gemma','gemini']);
 const GOOGLE_RETRY_CATEGORIES = new Set(['transient_http','rate_limited','network_error']);
+const envValue=(name)=>String(process.env[name]||'').trim();
 
 export function getProviderTimeoutMs() {
   const configured=Number(process.env.TRANSLATION_PROVIDER_TIMEOUT_MS);
@@ -55,12 +56,12 @@ function promptFor(text,detection) {
 }
 
 const modelFor=(provider)=>provider==='gemma'
-  ? process.env.GEMMA_MODEL||'google/gemma-3-27b-it'
+  ? envValue('GEMMA_MODEL')||'google/gemma-4-31b-it:free'
   : provider==='gemini'
-    ? process.env.GEMINI_MODEL||'gemini-3.5-flash'
+    ? envValue('GEMINI_MODEL')||'gemini-3.5-flash'
     : provider==='nvidia'
-      ? process.env.NVIDIA_MODEL||'meta/llama-3.3-70b-instruct'
-      : process.env.GROQ_MODEL||'llama-3.3-70b-versatile';
+      ? envValue('NVIDIA_MODEL')||'meta/llama-3.3-70b-instruct'
+      : envValue('GROQ_MODEL')||'llama-3.3-70b-versatile';
 
 async function googleGenerate(provider,key,model,text,detection,timeoutMs,{jsonMode=true}={}) {
   if(!key||!model)return null;
@@ -79,10 +80,10 @@ async function openAICompatible({provider,key,url,model,jsonMode=true},text,dete
 }
 
 const providers={
-  gemma:(text,detection,timeoutMs)=>openAICompatible({provider:'gemma',key:process.env.GEMMA_API_KEY,url:'https://openrouter.ai/api/v1/chat/completions',model:modelFor('gemma'),jsonMode:false},text,detection,timeoutMs),
-  nvidia:(text,detection,timeoutMs)=>openAICompatible({provider:'nvidia',key:process.env.NVIDIA_API_KEY,url:'https://integrate.api.nvidia.com/v1/chat/completions',model:modelFor('nvidia'),jsonMode:false},text,detection,timeoutMs),
-  gemini:(text,detection,timeoutMs)=>googleGenerate('gemini',process.env.GEMINI_API_KEY,modelFor('gemini'),text,detection,timeoutMs),
-  groq:(text,detection,timeoutMs)=>openAICompatible({provider:'groq',key:process.env.GROQ_API_KEY,url:'https://api.groq.com/openai/v1/chat/completions',model:modelFor('groq')},text,detection,timeoutMs),
+  gemma:(text,detection,timeoutMs)=>openAICompatible({provider:'gemma',key:envValue('OPENROUTER_API_KEY'),url:'https://openrouter.ai/api/v1/chat/completions',model:modelFor('gemma'),jsonMode:false},text,detection,timeoutMs),
+  nvidia:(text,detection,timeoutMs)=>openAICompatible({provider:'nvidia',key:envValue('NVIDIA_API_KEY'),url:'https://integrate.api.nvidia.com/v1/chat/completions',model:modelFor('nvidia'),jsonMode:false},text,detection,timeoutMs),
+  gemini:(text,detection,timeoutMs)=>googleGenerate('gemini',envValue('GEMINI_API_KEY'),modelFor('gemini'),text,detection,timeoutMs),
+  groq:(text,detection,timeoutMs)=>openAICompatible({provider:'groq',key:envValue('GROQ_API_KEY'),url:'https://api.groq.com/openai/v1/chat/completions',model:modelFor('groq')},text,detection,timeoutMs),
 };
 
 const emojiPattern=/\p{Extended_Pictographic}/gu;
@@ -101,21 +102,22 @@ function normalizeProviderError(error,provider,model) {
 async function runAttempt(provider,text,detection,timeoutMs,retry) {
   const model=modelFor(provider),startedAt=Date.now();
   try {
+    console.info(`[translation] provider=${provider} model=${model} event=provider_fetch_start attempt=${retry+1} timeoutMs=${timeoutMs}`);
     const result=await providers[provider](text,detection,timeoutMs);
     if(result===null)return{missing:true};
     if(!valid(result,text))throw new ProviderError(`${provider} response validation failed`,{provider,model,category:'invalid_response'});
-    console.info(`[translation] provider=${provider} model=${model} result=success elapsedMs=${Date.now()-startedAt} retry=${retry}`);
+    console.info(`[translation] provider=${provider} model=${model} event=provider_fetch_response result=success elapsedMs=${Date.now()-startedAt} attempt=${retry+1}`);
     return{result};
   }catch(error){
     const failure=normalizeProviderError(error,provider,model),status=failure.status?` status=${failure.status}`:'';
-    console.error(`[translation] provider=${provider} model=${model} error=${failure.category}${status} timeoutMs=${timeoutMs} elapsedMs=${Date.now()-startedAt} retry=${retry}`);
+    console.error(`[translation] provider=${provider} model=${model} event=provider_fetch_error error=${failure.category}${status} timeoutMs=${timeoutMs} elapsedMs=${Date.now()-startedAt} attempt=${retry+1}`);
     throw failure;
   }
 }
 
 const providerConfigured=(provider)=>provider==='gemma'
-  ? Boolean(process.env.GEMMA_API_KEY)
-  : Boolean(provider==='gemini'?process.env.GEMINI_API_KEY:provider==='nvidia'?process.env.NVIDIA_API_KEY:process.env.GROQ_API_KEY);
+  ? Boolean(envValue('OPENROUTER_API_KEY'))
+  : Boolean(provider==='gemini'?envValue('GEMINI_API_KEY'):provider==='nvidia'?envValue('NVIDIA_API_KEY'):envValue('GROQ_API_KEY'));
 
 export async function diagnoseProvider(provider,text,detection) {
   if(!providers[provider]||!providerConfigured(provider))throw new ProviderError(`${provider} is not fully configured`,{provider,model:modelFor(provider)||'missing',category:'configuration_missing'});
@@ -125,7 +127,7 @@ export async function diagnoseProvider(provider,text,detection) {
 }
 
 export async function routeTranslation(text,detection) {
-  if(!process.env.GEMMA_API_KEY&&process.env.GEMMA_MODEL)console.error('[translation] provider=gemma model=missing_key error=configuration_missing');
+  if(!envValue('OPENROUTER_API_KEY')&&envValue('GEMMA_MODEL'))console.error('[translation] provider=gemma model=missing_key error=configuration_missing');
   const order=['gemma','nvidia','gemini','groq'].filter(providerConfigured);
   const startedAt=Date.now(),providerTimeout=getProviderTimeoutMs(),budget=getProviderBudgetMs();
   console.info(`[translation] provider=router model=none result=start budgetMs=${budget} timeoutMs=${providerTimeout} configured=${order.join(',')||'none'}`);
