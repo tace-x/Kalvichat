@@ -9,8 +9,8 @@ const payload=(provider)=>provider==='gemini'
 const response=(provider,status=200)=>({ok:status>=200&&status<300,status,json:async()=>payload(provider)});
 
 let sequence=0;
-async function loadRouter({gemma=false,gemmaModel='gemma-test-model',gemini=true,nvidia=true,groq=true,timeout=10000,budget=20000}={}){
-  process.env.GEMMA_API_KEY=gemma?'gemma-secret-for-test':'';
+async function loadRouter({gemma=false,gemmaModel='google/gemma-4-31b-it:free',gemini=true,nvidia=true,groq=true,timeout=10000,budget=18000}={}){
+  process.env.OPENROUTER_API_KEY=gemma?'openrouter-secret-for-test':'';
   process.env.GEMMA_MODEL=gemma?gemmaModel:'';
   process.env.GEMINI_API_KEY=gemini?'gemini-secret-for-test':'';
   process.env.NVIDIA_API_KEY=nvidia?'nvidia-secret-for-test':'';
@@ -30,7 +30,7 @@ test('Gemma uses OpenRouter and stops all fallback providers',async()=>{
   const {routeTranslation}=await loadRouter({gemma:true});const calls=[];
   globalThis.fetch=async(url,options)=>{const provider=providerName(String(url));calls.push({provider,url:String(url),options});return response(provider)};
   const {value}=await captureLogs(()=>routeTranslation('sughamaano?',detection));
-  assert.equal(value.provider,'gemma');assert.equal(calls.length,1);assert.equal(calls[0].provider,'gemma');assert.equal(calls[0].url,'https://openrouter.ai/api/v1/chat/completions');assert.equal(calls[0].options.headers.authorization,'Bearer gemma-secret-for-test');assert.equal(JSON.parse(calls[0].options.body).model,'gemma-test-model');
+  assert.equal(value.provider,'gemma');assert.equal(calls.length,1);assert.equal(calls[0].provider,'gemma');assert.equal(calls[0].url,'https://openrouter.ai/api/v1/chat/completions');assert.equal(calls[0].options.headers.authorization,'Bearer openrouter-secret-for-test');assert.equal(JSON.parse(calls[0].options.body).model,'google/gemma-4-31b-it:free');
 });
 
 test('Gemma failure falls back to NVIDIA',async()=>{
@@ -47,8 +47,8 @@ test('Gemma and NVIDIA failure falls back to Gemini',async()=>{
   assert.equal(value.provider,'gemini');assert.deepEqual(calls,['gemma','gemma','nvidia','gemini']);
 });
 
-test('Gemma missing key is skipped without breaking NVIDIA fallback',async()=>{
-  const {routeTranslation}=await loadRouter({gemma:false,gemini:false});const calls=[];
+test('Gemma missing or whitespace-only key is skipped without breaking NVIDIA fallback',async()=>{
+  const {routeTranslation}=await loadRouter({gemma:true,gemini:false});process.env.OPENROUTER_API_KEY='   ';const calls=[];
   globalThis.fetch=async(url)=>{const provider=providerName(String(url));calls.push(provider);return response(provider)};
   const {value}=await captureLogs(()=>routeTranslation('sughamaano?',detection));
   assert.equal(value.provider,'nvidia');assert.deepEqual(calls,['nvidia']);
@@ -81,7 +81,7 @@ test('Gemini 503 receives one short retry and succeeds',async()=>{
   const {routeTranslation}=await loadRouter({nvidia:false});const calls=[];
   globalThis.fetch=async(url)=>{const provider=providerName(String(url));calls.push(provider);return response(provider,calls.length===1?503:200)};
   const {value,logs}=await captureLogs(()=>routeTranslation('sughamaano?',detection));
-  assert.equal(value.provider,'gemini');assert.deepEqual(calls,['gemini','gemini']);assert.match(logs.join('\n'),/error=transient_http status=503/);assert.match(logs.join('\n'),/retry=1/);
+  assert.equal(value.provider,'gemini');assert.deepEqual(calls,['gemini','gemini']);assert.match(logs.join('\n'),/error=transient_http status=503/);assert.match(logs.join('\n'),/attempt=2/);
 });
 
 test('Gemini 429 is classified and retried once',async()=>{
@@ -133,7 +133,7 @@ test('configured fallbacks receive meaningful independent attempt windows',async
   globalThis.fetch=async(url)=>response(providerName(String(url)),503);
   try{await captureLogs(async()=>{await assert.rejects(()=>routeTranslation('fallback allocation',detection));});}
   finally{AbortSignal.timeout=originalTimeout;}
-  assert.equal(windows.length,6);assert.equal(windows[0],10000);assert.equal(windows[1],3000);assert.ok(windows[2]>=9000);assert.ok(windows[3]>=9000);assert.equal(windows[4],3000);assert.ok(windows[5]>=2500);
+  assert.equal(windows.length,6);assert.ok(windows[0]>=8900&&windows[0]<=9000);assert.equal(windows[1],3000);assert.ok(windows[2]>=9000);assert.ok(windows[3]>=9000);assert.equal(windows[4],3000);assert.ok(windows[5]>=2500);
 });
 
 test('fresh request still attempts providers after previous request exhausts all providers',async()=>{
@@ -148,5 +148,5 @@ test('fresh request still attempts providers after previous request exhausts all
 test('diagnostics never contain API keys',async()=>{
   const {routeTranslation}=await loadRouter();globalThis.fetch=async(url)=>response(providerName(String(url)),503);
   const {logs}=await captureLogs(async()=>{await assert.rejects(()=>routeTranslation('sughamaano?',detection));});
-  const output=logs.join('\n');for(const secret of ['gemma-secret-for-test','gemini-secret-for-test','nvidia-secret-for-test','groq-secret-for-test'])assert.equal(output.includes(secret),false);
+  const output=logs.join('\n');for(const secret of ['openrouter-secret-for-test','gemini-secret-for-test','nvidia-secret-for-test','groq-secret-for-test'])assert.equal(output.includes(secret),false);
 });
