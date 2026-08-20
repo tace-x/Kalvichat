@@ -14,7 +14,8 @@ export async function summary(db){
     db.collection('translationDatasetVersions').orderBy('createdAt','desc').limit(10).get(),
     db.collection('translationTrainingBatches').orderBy('createdAt','desc').limit(10).get(),
   ]);
-  return{state:state.exists?state.data():{activeVersion:null,currentBatchId:null,pendingCount:0},versions:versions.docs.map(serialize),batches:batches.docs.map(serialize),limits:{maxUploadBytes:MAX_UPLOAD_BYTES,maxCanonicalEntries:MAX_CANONICAL_ENTRIES,maxLookupKeys:MAX_LOOKUP_KEYS,formats:['json','csv','txt']}};
+  const value=state.data()||{};
+  return{state:{activeVersion:value.activeVersion||null,currentBatchId:value.currentBatchId||null,pendingCount:Number(value.pendingCount||0),nextVersion:Number(value.nextVersion||1),updatedAt:iso(value.updatedAt)},versions:versions.docs.map(serialize),batches:batches.docs.map(serialize),limits:{maxUploadBytes:MAX_UPLOAD_BYTES,maxCanonicalEntries:MAX_CANONICAL_ENTRIES,maxLookupKeys:MAX_LOOKUP_KEYS,formats:['json','csv','txt']}};
 }
 
 export async function uploadDataset(db,{content,type,fileName},adminId){
@@ -77,21 +78,22 @@ export async function exportTraining(db,batchId){
 }
 
 export default async function handler(request,response){
-  response.setHeader('Cache-Control','no-store');
+  const startedAt=Date.now(),method=String(request.method||'UNKNOWN'),action=String(method==='GET'?request.query?.action||'summary':request.body?.action||'unknown');
+  response.setHeader('Cache-Control','no-store');response.setHeader('Content-Type','application/json; charset=utf-8');
+  console.info(`[admin-training] method=${method} action=${action} phase=start`);
   try{
     const session=requireAdmin(request),{db}=getAdmin(),adminId=session.adminId||'primary-admin';
-    if(request.method==='GET'){
-      const action=String(request.query?.action||'summary');
-      if(action==='summary')return response.status(200).json(await summary(db));
-      if(action==='export'){const result=await exportTraining(db,String(request.query?.batchId||''));response.setHeader('Content-Type','text/plain; charset=utf-8');response.setHeader('Content-Disposition',`attachment; filename="kalvi-training-${String(request.query?.batchId||'batch')}.txt"`);return response.status(200).send?response.status(200).send(result.text):response.status(200).end(result.text);}
+    console.info(`[admin-training] method=${method} action=${action} phase=auth result=success elapsedMs=${Date.now()-startedAt}`);
+    if(method==='GET'){
+      if(action==='summary'){const result=await summary(db);console.info(`[admin-training] method=GET action=summary status=200 elapsedMs=${Date.now()-startedAt}`);return response.status(200).json(result);}
+      if(action==='export'){const result=await exportTraining(db,String(request.query?.batchId||''));response.setHeader('Content-Type','text/plain; charset=utf-8');response.setHeader('Content-Disposition',`attachment; filename="kalvi-training-${String(request.query?.batchId||'batch')}.txt"`);console.info(`[admin-training] method=GET action=export status=200 entries=${result.count} elapsedMs=${Date.now()-startedAt}`);return response.status(200).send?response.status(200).send(result.text):response.status(200).end(result.text);}
       return response.status(400).json({error:'Unknown training action.'});
     }
-    if(request.method!=='POST')return response.status(405).json({error:'Method not allowed'});
+    if(method!=='POST')return response.status(405).json({error:'Method not allowed'});
     requireSameOrigin(request);
-    const action=String(request.body?.action||'');
-    if(action==='upload')return response.status(200).json({success:true,...await uploadDataset(db,request.body,adminId)});
+    if(action==='upload'){const result=await uploadDataset(db,request.body,adminId);console.info(`[admin-training] method=POST action=upload status=200 entries=${result.entryCount} elapsedMs=${Date.now()-startedAt}`);return response.status(200).json({success:true,...result});}
     if(action==='rollback')return response.status(200).json({success:true,...await rollback(db,String(request.body?.version||''),adminId)});
     if(action==='complete')return response.status(200).json({success:true,...await completeTraining(db,adminId)});
     return response.status(400).json({error:'Unknown training action.'});
-  }catch(error){console.error('[training]',error?.name||'Error');return response.status(error.status||500).json({error:error.status&&error.status<500?error.message:'Training operation failed.'});}
+  }catch(error){const status=error.status||500;console.error(`[admin-training] method=${method} action=${action} status=${status} error=${error?.name||'Error'} errorCode=${error?.code||'none'} elapsedMs=${Date.now()-startedAt}`,error?.stack||'');return response.status(status).json({error:status<500?error.message:'Training operation failed.',code:error?.code||'training_failed'});}
 }
