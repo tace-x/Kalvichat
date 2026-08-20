@@ -50,9 +50,10 @@ function parseJson(text) {
   return JSON.parse(cleaned.slice(start, end + 1));
 }
 
-function promptFor(text,detection) {
+function promptFor(text,detection,knowledgeContext) {
   const hint=detection?`${detection.detectedLanguage} (${Math.round(detection.confidence*100)}% local confidence)`:'unknown';
-  return `Translate one informal private-chat message into natural conversational English. The source may be Manglish (romanized Malayalam), Hinglish (romanized Hindi), Tanglish (romanized Tamil), Telglish (romanized Telugu), Kanglish (romanized Kannada), mixed English plus phonetic Indian language, slang, abbreviations, or misspelled phonetic text. Infer intent from context and tolerate repeated/missing/swapped vowels, missing spaces, repeated letters and punctuation. Preserve names, emojis, personality and tone. If the input is genuinely English, do not translate it. Do not add explanations. Return JSON only because the API contract requires it: {"detectedLanguage":"english|hinglish|manglish|tanglish|telglish|kanglish|mixed|unknown","translation":"natural English text or empty for English","confidence":0.0}. Local hint: ${hint}. Message:\n${JSON.stringify(text)}`;
+  const knowledge=knowledgeContext?` Relevant trusted knowledge (context only; choose the best meaning for the full message): ${JSON.stringify(knowledgeContext)}.`:'';
+  return `Translate one informal private-chat message into natural conversational English. The source may be Manglish (romanized Malayalam), Hinglish (romanized Hindi), Tanglish (romanized Tamil), Telglish (romanized Telugu), Kanglish (romanized Kannada), mixed English plus phonetic Indian language, slang, abbreviations, or misspelled phonetic text. Infer intent from context and tolerate repeated/missing/swapped vowels, missing spaces, repeated letters and punctuation. Preserve names, emojis, personality and tone. If the input is genuinely English, do not translate it. Do not add explanations. Return JSON only because the API contract requires it: {"detectedLanguage":"english|hinglish|manglish|tanglish|telglish|kanglish|mixed|unknown","translation":"natural English text or empty for English","confidence":0.0}. Local hint: ${hint}.${knowledge} Message:\n${JSON.stringify(text)}`;
 }
 
 const modelFor=(provider)=>provider==='gemma'
@@ -63,27 +64,27 @@ const modelFor=(provider)=>provider==='gemma'
       ? envValue('NVIDIA_MODEL')||'meta/llama-3.3-70b-instruct'
       : envValue('GROQ_MODEL')||'llama-3.3-70b-versatile';
 
-async function googleGenerate(provider,key,model,text,detection,timeoutMs,{jsonMode=true}={}) {
+async function googleGenerate(provider,key,model,text,detection,timeoutMs,knowledgeContext,{jsonMode=true}={}) {
   if(!key||!model)return null;
   const generationConfig={temperature:0.15};
   if(jsonMode)generationConfig.responseMimeType='application/json';
-  const response=await providerFetch({provider,model,timeoutMs,url:`https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent?key=${encodeURIComponent(key)}`,options:{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({contents:[{parts:[{text:promptFor(text,detection)}]}],generationConfig})}});
+  const response=await providerFetch({provider,model,timeoutMs,url:`https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent?key=${encodeURIComponent(key)}`,options:{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({contents:[{parts:[{text:promptFor(text,detection,knowledgeContext)}]}],generationConfig})}});
   return parseJson((await response.json()).candidates?.[0]?.content?.parts?.[0]?.text||'');
 }
 
-async function openAICompatible({provider,key,url,model,jsonMode=true},text,detection,timeoutMs) {
+async function openAICompatible({provider,key,url,model,jsonMode=true},text,detection,timeoutMs,knowledgeContext) {
   if(!key)return null;
-  const payload={model,temperature:0.15,messages:[{role:'user',content:promptFor(text,detection)}]};
+  const payload={model,temperature:0.15,messages:[{role:'user',content:promptFor(text,detection,knowledgeContext)}]};
   if(jsonMode)payload.response_format={type:'json_object'};
   const response=await providerFetch({provider,model,timeoutMs,url,options:{method:'POST',headers:{'content-type':'application/json',authorization:`Bearer ${key}`},body:JSON.stringify(payload)}});
   return parseJson((await response.json()).choices?.[0]?.message?.content||'');
 }
 
 const providers={
-  gemma:(text,detection,timeoutMs)=>openAICompatible({provider:'gemma',key:envValue('OPENROUTER_API_KEY'),url:'https://openrouter.ai/api/v1/chat/completions',model:modelFor('gemma'),jsonMode:false},text,detection,timeoutMs),
-  nvidia:(text,detection,timeoutMs)=>openAICompatible({provider:'nvidia',key:envValue('NVIDIA_API_KEY'),url:'https://integrate.api.nvidia.com/v1/chat/completions',model:modelFor('nvidia'),jsonMode:false},text,detection,timeoutMs),
-  gemini:(text,detection,timeoutMs)=>googleGenerate('gemini',envValue('GEMINI_API_KEY'),modelFor('gemini'),text,detection,timeoutMs),
-  groq:(text,detection,timeoutMs)=>openAICompatible({provider:'groq',key:envValue('GROQ_API_KEY'),url:'https://api.groq.com/openai/v1/chat/completions',model:modelFor('groq')},text,detection,timeoutMs),
+  gemma:(text,detection,timeoutMs,knowledgeContext)=>openAICompatible({provider:'gemma',key:envValue('OPENROUTER_API_KEY'),url:'https://openrouter.ai/api/v1/chat/completions',model:modelFor('gemma'),jsonMode:false},text,detection,timeoutMs,knowledgeContext),
+  nvidia:(text,detection,timeoutMs,knowledgeContext)=>openAICompatible({provider:'nvidia',key:envValue('NVIDIA_API_KEY'),url:'https://integrate.api.nvidia.com/v1/chat/completions',model:modelFor('nvidia'),jsonMode:false},text,detection,timeoutMs,knowledgeContext),
+  gemini:(text,detection,timeoutMs,knowledgeContext)=>googleGenerate('gemini',envValue('GEMINI_API_KEY'),modelFor('gemini'),text,detection,timeoutMs,knowledgeContext),
+  groq:(text,detection,timeoutMs,knowledgeContext)=>openAICompatible({provider:'groq',key:envValue('GROQ_API_KEY'),url:'https://api.groq.com/openai/v1/chat/completions',model:modelFor('groq')},text,detection,timeoutMs,knowledgeContext),
 };
 
 const emojiPattern=/\p{Extended_Pictographic}/gu;
@@ -99,11 +100,11 @@ function normalizeProviderError(error,provider,model) {
   return new ProviderError(error?.message||`${provider} invalid response`,{provider,model,category:'invalid_response'});
 }
 
-async function runAttempt(provider,text,detection,timeoutMs,retry) {
+async function runAttempt(provider,text,detection,timeoutMs,retry,knowledgeContext) {
   const model=modelFor(provider),startedAt=Date.now();
   try {
     console.info(`[translation] provider=${provider} model=${model} event=provider_fetch_start attempt=${retry+1} timeoutMs=${timeoutMs}`);
-    const result=await providers[provider](text,detection,timeoutMs);
+    const result=await providers[provider](text,detection,timeoutMs,knowledgeContext);
     if(result===null)return{missing:true};
     if(!valid(result,text))throw new ProviderError(`${provider} response validation failed`,{provider,model,category:'invalid_response'});
     console.info(`[translation] provider=${provider} model=${model} event=provider_fetch_response result=success elapsedMs=${Date.now()-startedAt} attempt=${retry+1}`);
@@ -121,12 +122,12 @@ const providerConfigured=(provider)=>provider==='gemma'
 
 export async function diagnoseProvider(provider,text,detection) {
   if(!providers[provider]||!providerConfigured(provider))throw new ProviderError(`${provider} is not fully configured`,{provider,model:modelFor(provider)||'missing',category:'configuration_missing'});
-  const attempt=await runAttempt(provider,text,detection,getProviderTimeoutMs(),0);
+  const attempt=await runAttempt(provider,text,detection,getProviderTimeoutMs(),0,null);
   if(attempt.missing)throw new ProviderError(`${provider} is not configured`,{provider,model:modelFor(provider)||'missing',category:'configuration_missing'});
   return{...attempt.result,confidence:Math.max(0,Math.min(1,Number(attempt.result.confidence)||0)),provider};
 }
 
-export async function routeTranslation(text,detection) {
+export async function routeTranslation(text,detection,knowledgeContext=null) {
   if(!envValue('OPENROUTER_API_KEY')&&envValue('GEMMA_MODEL'))console.error('[translation] provider=gemma model=missing_key error=configuration_missing');
   const order=['gemma','nvidia','gemini','groq'].filter(providerConfigured);
   const startedAt=Date.now(),providerTimeout=getProviderTimeoutMs(),budget=getProviderBudgetMs();
@@ -140,7 +141,7 @@ export async function routeTranslation(text,detection) {
     const reservedForFallback=laterProviders*RESERVED_FALLBACK_WINDOW_MS;
     const attemptWindow=Math.max(MIN_ATTEMPT_WINDOW_MS,remaining-reservedForFallback);
     try{
-      const attempt=await runAttempt(provider,text,detection,Math.min(providerTimeout,attemptWindow),0);
+      const attempt=await runAttempt(provider,text,detection,Math.min(providerTimeout,attemptWindow),0,knowledgeContext);
       if(attempt.missing)continue;
       return{...attempt.result,confidence:Math.max(0,Math.min(1,Number(attempt.result.confidence)||0)),provider};
     }catch(error){
@@ -152,7 +153,7 @@ export async function routeTranslation(text,detection) {
         await wait(GOOGLE_RETRY_DELAY_MS);
         remaining=budget-(Date.now()-startedAt);retryWindow=remaining-reservedForFallback;
         try{
-          const retry=await runAttempt(provider,text,detection,Math.min(GOOGLE_RETRY_TIMEOUT_MS,providerTimeout,retryWindow),1);
+          const retry=await runAttempt(provider,text,detection,Math.min(GOOGLE_RETRY_TIMEOUT_MS,providerTimeout,retryWindow),1,knowledgeContext);
           if(!retry.missing){
             return{...retry.result,confidence:Math.max(0,Math.min(1,Number(retry.result.confidence)||0)),provider};
           }
