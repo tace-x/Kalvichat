@@ -30,8 +30,9 @@ export async function adminData(section,cursor,targetId){
   if(!r.ok)throw Object.assign(new Error(data.error||'Could not load data.'),{status:r.status});return data;
 }
 export const adminAction=(action,targetId,reason='',avatarId='')=>post('/api/admin-action',{action,targetId,reason,avatarId});
-export async function adminTrainingSummary(){const response=await fetch('/api/admin-training?action=summary',{credentials:'same-origin'});const data=await response.json().catch(()=>({}));if(!response.ok)throw new Error(data.error||'Could not load training data.');return data;}
-export const adminTrainingUpload=(payload)=>post('/api/admin-training',{action:'upload',...payload});
-export const adminTrainingComplete=()=>post('/api/admin-training',{action:'complete'});
-export const adminTrainingRollback=(version)=>post('/api/admin-training',{action:'rollback',version});
+async function trainingPost(body){const response=await fetch('/api/admin-training',{method:'POST',headers:{'content-type':'application/json'},credentials:'same-origin',body:JSON.stringify(body)});const data=await response.json().catch(()=>({}));if(!response.ok)throw Object.assign(new Error(data.error||`Training API request failed (HTTP ${response.status}).`),{status:response.status,code:data.code});return data;}
+export async function adminTrainingSummary(){const response=await fetch('/api/admin-training?action=summary',{credentials:'same-origin'});const data=await response.json().catch(()=>({}));if(!response.ok)throw Object.assign(new Error(data.error||`Could not load training data (HTTP ${response.status}).`),{status:response.status,code:data.code});return data;}
+export const adminTrainingUpload=(payload)=>trainingPost({action:'upload',...payload});
+export const adminTrainingComplete=()=>trainingPost({action:'complete'});
+export const adminTrainingRollback=(version)=>trainingPost({action:'rollback',version});
 export async function adminTrainingExport(batchId){const response=await fetch(`/api/admin-training?action=export&batchId=${encodeURIComponent(batchId)}`,{credentials:'same-origin'});if(!response.ok){const data=await response.json().catch(()=>({}));throw new Error(data.error||'Could not export training data.');}const blob=await response.blob(),url=URL.createObjectURL(blob),link=document.createElement('a');link.href=url;link.download=`kalvi-training-${batchId}.txt`;link.click();URL.revokeObjectURL(url);}
