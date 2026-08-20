@@ -4,6 +4,8 @@ import { requireAdmin, requireSameOrigin } from '../server/adminSession.js';
 import { getAdmin } from '../server/firebaseAdmin.js';
 import { buildKnowledgeDocuments, MAX_CANONICAL_ENTRIES, MAX_LOOKUP_KEYS, MAX_UPLOAD_BYTES, mergeKnowledgeEntries, parseDataset, trainingTxt } from '../server/translationKnowledge.js';
 
+console.info('[admin-training] module_load=success');
+
 const cleanFileName=(value)=>String(value||'dataset').replace(/[^a-z0-9._-]+/gi,'_').slice(0,100);
 const iso=(value)=>value?.toDate?.().toISOString?.()||null;
 const serialize=(snapshot)=>{const value=snapshot.data();return{id:snapshot.id,...value,createdAt:iso(value.createdAt),updatedAt:iso(value.updatedAt),completedAt:iso(value.completedAt)};};
