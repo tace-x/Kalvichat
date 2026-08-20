@@ -1,155 +1,51 @@
-import crypto from 'node:crypto';
-import { FieldValue } from 'firebase-admin/firestore';
-import { detectLanguage, normalizeForDetection, phoneticKey } from './languageDetection.js';
+import { useEffect, useRef, useState } from 'react';
+import { adminAction, adminData, adminLogin, adminLogout, adminSession, adminTrainingComplete, adminTrainingExport, adminTrainingRollback, adminTrainingSummary, adminTrainingUpload } from '../services/authService';
+import Confirm from './Confirm';
 
-const configuredLimit=(name,fallback,min,max)=>{const value=Number(process.env[name]);return Number.isFinite(value)?Math.min(max,Math.max(min,Math.round(value))):fallback;};
-export const KNOWLEDGE_CONFIDENCE_THRESHOLD=.85;
-export const MAX_UPLOAD_BYTES=configuredLimit('TRANSLATION_DATASET_MAX_BYTES',2*1024*1024,64*1024,10*1024*1024);
-export const MAX_CANONICAL_ENTRIES=configuredLimit('TRANSLATION_DATASET_MAX_ENTRIES',1000,10,10000);
-export const MAX_LOOKUP_KEYS=configuredLimit('TRANSLATION_DATASET_MAX_LOOKUP_KEYS',5000,50,50000);
-const hash=(value)=>crypto.createHash('sha256').update(value).digest('hex');
-const cleanText=(value,max=500)=>String(value||'').trim().replace(/\s+/g,' ').slice(0,max);
-const clamp=(value,fallback=.9)=>Math.max(0,Math.min(1,Number.isFinite(Number(value))?Number(value):fallback));
-const unique=(values,max=25)=>[...new Set(values.map((value)=>cleanText(value)).filter(Boolean))].slice(0,max);
+const sections=['dashboard','pending','approved','rejected','banned','training'];
+const labels={dashboard:'Dashboard',pending:'Pending',approved:'Approved',rejected:'Rejected',banned:'Banned',training:'Translation AI Training'};
+const when=(value)=>value?new Intl.DateTimeFormat([],{dateStyle:'medium',timeStyle:'short'}).format(new Date(value)):'—';
 
-export function sanitizeLearningSource(source){
-  const value=cleanText(source,500);
-  if(!value||value.length>240)return null;
-  if(/https?:\/\/|www\.|\b[\w.+-]+@[\w.-]+\.[a-z]{2,}\b/i.test(value))return null;
-  if(/(?:\+?\d[\s().-]?){7,}/.test(value))return null;
-  if(/\b(password|passwd|otp|one.?time.?password|api.?key|access.?token|auth.?token|secret)\b/i.test(value))return null;
-  if(/@[a-z0-9_.-]{2,}/i.test(value))return null;
-  return value;
+function AdminLogin({onReady}){
+  const[username,setUsername]=useState(''),[password,setPassword]=useState(''),[busy,setBusy]=useState(false),[error,setError]=useState('');
+  const submit=async(e)=>{e.preventDefault();setBusy(true);setError('');try{await adminLogin(username,password);onReady()}catch(reason){setError(reason.message)}finally{setBusy(false)}};
+  return <div className="admin-login"><form className="auth-card glass" onSubmit={submit}><div className="auth-brand"><div className="brand-mark">K</div><div><h1>Admin</h1><span>KALVI CHAT 🤍 moderation</span></div></div>
+    <label>Username<input value={username} onChange={(e)=>setUsername(e.target.value)} autoComplete="username" required/></label>
+    <label>Password<input type="password" value={password} onChange={(e)=>setPassword(e.target.value)} autoComplete="current-password" required/></label>
+    {error&&<p className="form-error">{error}</p>}<button className="auth-submit" disabled={busy}>{busy?'Verifying…':'Login'}</button></form></div>;
+}
+function ModerationConfirm({value,onClose,onConfirm}){
+  const[reason,setReason]=useState(''),[clearText,setClearText]=useState(''),cancelRef=useRef(null);useEffect(()=>{setReason('');setClearText('');if(!value)return undefined;const frame=requestAnimationFrame(()=>cancelRef.current?.focus());const key=(event)=>{if(event.key==='Escape')onClose()};document.addEventListener('keydown',key);return()=>{cancelAnimationFrame(frame);document.removeEventListener('keydown',key)}},[value?.action,value?.targetId]);if(!value)return null;
+  const copy={approve:['Approve this registration?','The user will be able to log in and enter chat.','Approve'],reject:['Reject this registration?','The application remains in registration history.','Reject'],mute:['Mute this user?','They can read chat but cannot send, reply, react, or type.','Mute'],unmute:['Unmute this user?','Their chat participation will be restored.','Unmute'],ban:['Ban this user?','Their account and history remain, but all chat access is blocked.','Ban'],unban:['Unban this user?','Their approved account and identity will be restored.','Unban'],deleteMessage:['Delete this message?','This message will be removed for everyone.','Delete'],clearChat:['Clear the entire chat?','All current messages will be removed from the active conversation. This cannot be undone from the chat.','Clear Chat']}[value.action];
+  return <div className="modal-layer" role="dialog" aria-modal="true"><button className="modal-scrim" onClick={onClose}/><div className="confirm glass"><div className="confirm-icon">!</div><h2>{copy[0]}</h2><p>{copy[1]}</p>{value.action==='reject'&&<label className="reason-input">Reason (optional)<textarea value={reason} maxLength="300" onChange={(e)=>setReason(e.target.value)}/></label>}{value.action==='clearChat'&&<label className="reason-input">Type CLEAR to confirm<input value={clearText} onChange={(e)=>setClearText(e.target.value)} autoComplete="off"/></label>}<div><button ref={cancelRef} className="secondary" onClick={onClose}>Cancel</button><button className="destructive" disabled={value.action==='clearChat'&&clearText!=='CLEAR'} onClick={()=>onConfirm(reason)}>{copy[2]}</button></div></div></div>;
+}
+function AvatarPicker({user,onClose,onChanged}){
+  const[data,setData]=useState(null),[selected,setSelected]=useState(''),[loading,setLoading]=useState(true),[saving,setSaving]=useState(false),[error,setError]=useState('');
+  useEffect(()=>{let active=true;setLoading(true);adminData('avatarPool',null,user.id).then((result)=>{if(active){setData(result);setSelected(result.target.avatarId||'')}}).catch((reason)=>{if(active)setError(reason.message)}).finally(()=>{if(active)setLoading(false)});return()=>{active=false}},[user.id]);
+  const save=async()=>{if(!selected)return;setSaving(true);setError('');try{await adminAction('changeAvatar',user.id,'',selected);await onChanged()}catch(reason){setError(reason.message);setSaving(false)}};
+  return <div className="modal-layer avatar-picker-layer" role="dialog" aria-modal="true" aria-label="Change profile avatar"><button type="button" className="modal-scrim" onClick={onClose} aria-label="Close"/><section className="avatar-picker glass" onClick={(event)=>event.stopPropagation()} onPointerDown={(event)=>event.stopPropagation()}><header><div><small>IDENTITY RECOVERY</small><h2>Change DP</h2><p>{data?.target?.name||user.name}</p></div>{data?.target&&<div className="avatar-picker-current" style={{'--identity':data.target.senderColor}}><img src={data.target.avatar} alt="Current avatar"/><i aria-hidden="true"/></div>}</header>{loading?<div className="avatar-picker-loading"><span className="spinner"/> Loading avatar pool…</div>:<div className="avatar-pool">{data?.avatars.map((avatar)=>{const disabled=avatar.status==='in_use',chosen=selected===avatar.id;return <button type="button" key={avatar.id} disabled={disabled} className={`${avatar.status} ${chosen?'selected':''}`} onClick={()=>!disabled&&setSelected(avatar.id)}><img src={avatar.url} alt=""/><strong>{avatar.status==='current'?'CURRENT':avatar.status==='in_use'?'IN USE':'AVAILABLE'}</strong>{avatar.conflict&&<small title={avatar.owners.map((owner)=>`@${owner.username||owner.id}`).join(', ')}>Conflict: {avatar.owners.map((owner)=>`@${owner.username||owner.id}`).join(', ')}</small>}</button>})}</div>}{error&&<p className="form-error" role="alert">{error}</p>}<footer><button type="button" className="secondary" onClick={onClose}>Cancel</button><button type="button" className="auth-submit" disabled={loading||saving||!selected} onClick={save}>{saving?'Saving…':selected===data?.target?.avatarId?'Keep Current':'Assign DP'}</button></footer></section></div>;
+}
+function RegistrationCard({item,pending,onAction,onAvatar}){return <article className="admin-user-card" style={{'--identity':item.senderColor}}><img src={item.avatar} alt=""/><div className="admin-card-main"><div><h3>{item.name}</h3><span>@{item.username}</span></div><dl><div><dt>Phone</dt><dd>{item.phone}</dd></div><div><dt>Language</dt><dd>{item.language}</dd></div><div><dt>Registered</dt><dd>{when(item.createdAt)}</dd></div>{!pending&&item.rejectionReason&&<div><dt>Reason</dt><dd>{item.rejectionReason}</dd></div>}</dl></div>{pending&&<div className="card-actions">{item.uid&&<button className="identity-action" onClick={()=>onAvatar({...item,id:item.uid})}>Change DP</button>}<button onClick={()=>onAction('approve',item.id)}>Approve</button><button className="danger-outline" onClick={()=>onAction('reject',item.id)}>Reject</button></div>}</article>}
+function ModerationMessage({item,onDelete}){return <article className={`moderation-message ${item.deleted?'is-deleted':''}`} style={{'--identity':item.senderColor}}>{item.senderAvatar&&<img className="moderation-avatar" src={item.senderAvatar} alt=""/>}<div><strong>{item.senderName||'Unknown user'}</strong><time>{when(item.createdAt)}</time><p>{item.deleted?(item.deletedByAdmin?'This message was deleted by admin.':'This message was deleted.'):(item.originalText||'')}</p></div>{!item.deleted&&<button className="danger-outline" onClick={()=>onDelete(item.id)}>Delete</button>}</article>}
+function MemberCard({item,onAction,onAvatar}){const[expanded,setExpanded]=useState(false),banned=item.status==='banned';return <article className="admin-user-card expandable" style={{'--identity':item.senderColor}}><button className="card-expand" onClick={()=>setExpanded(!expanded)} aria-expanded={expanded}><img src={item.avatar} alt=""/><div className="admin-card-main"><div><h3>{item.name}</h3><span>@{item.username}</span></div><div className="member-badges"><span>{item.language}</span><span className={banned?'badge-banned':item.muted?'badge-muted':'badge-active'}>{banned?'Banned':item.muted?'Muted':'Active'}</span>{item.online&&<i>Online</i>}</div></div><span>{expanded?'⌃':'⌄'}</span></button>{expanded&&<div className="expanded-details"><dl><div><dt>Phone</dt><dd>{item.phone}</dd></div><div><dt>Registered</dt><dd>{when(item.createdAt)}</dd></div><div><dt>Approved</dt><dd>{when(item.approvedAt)}</dd></div><div><dt>Moderation</dt><dd>{banned?'Banned':item.muted?'Muted':'None'}</dd></div></dl><div className="card-actions"><button className="identity-action" onClick={()=>onAvatar(item)}>Change DP</button>{banned?<button onClick={()=>onAction('unban',item.id)}>Unban</button>:<><button onClick={()=>onAction(item.muted?'unmute':'mute',item.id)}>{item.muted?'Unmute':'Mute'}</button><button className="danger-outline" onClick={()=>onAction('ban',item.id)}>Ban</button></>}</div></div>}</article>}
+
+function TrainingCenter({data,onReload}){
+  const[file,setFile]=useState(null),[busy,setBusy]=useState(false),[error,setError]=useState(''),[result,setResult]=useState(null),[confirm,setConfirm]=useState(null);
+  const upload=async()=>{if(!file)return;setBusy(true);setError('');setResult(null);try{const type=file.name.split('.').pop().toLowerCase();const content=await file.text();const response=await adminTrainingUpload({fileName:file.name,type,content});setResult(response);setFile(null);await onReload()}catch(reason){setError(reason.message)}finally{setBusy(false)}};
+  const complete=async()=>{setConfirm(null);setBusy(true);try{await adminTrainingComplete();await onReload()}catch(reason){setError(reason.message)}finally{setBusy(false)}};
+  const rollback=async(version)=>{setConfirm(null);setBusy(true);try{await adminTrainingRollback(version);await onReload()}catch(reason){setError(reason.message)}finally{setBusy(false)}};
+  const currentBatch=data?.state?.currentBatchId;
+  return <div className="training-center"><div className="training-stats"><article><span>Active dataset</span><strong>{data?.state?.activeVersion||'None'}</strong></article><article><span>Pending training</span><strong>{data?.state?.pendingCount||0}</strong></article><article><span>Current batch</span><strong>{currentBatch||'Not started'}</strong></article></div><section className="training-panel"><header><div><small>DATASET UPLOAD</small><h2>Translation Knowledge</h2></div></header><p>Upload JSON, CSV, or TXT. Maximum size: {Math.round((data?.limits?.maxUploadBytes||2097152)/1048576)} MiB and {(data?.limits?.maxCanonicalEntries||1000).toLocaleString()} canonical entries.</p><div className="training-upload"><input type="file" accept=".json,.csv,.txt,application/json,text/csv,text/plain" onChange={(event)=>setFile(event.target.files?.[0]||null)}/><button disabled={!file||busy} onClick={upload}>{busy?'Processing…':'Upload Dataset'}</button></div>{result&&<div className="import-result"><strong>Import successful</strong><span>Processed: {result.processed}</span><span>New: {result.newEntries}</span><span>Merged: {result.mergedEntries}</span><span>Invalid skipped: {result.invalidEntries}</span></div>}</section><section className="training-panel"><header><div><small>TRAINING QUEUE</small><h2>Learning Batch</h2></div><div className="training-actions"><button disabled={!currentBatch||busy} onClick={()=>adminTrainingExport(currentBatch).catch((reason)=>setError(reason.message))}>Download Training TXT</button><button disabled={!currentBatch||busy} onClick={()=>setConfirm({type:'complete'})}>Training Completed</button></div></header><div className="training-history">{data?.batches?.map((batch)=><article key={batch.id}><strong>{batch.id}</strong><span>{batch.entryCount||0} entries · {batch.observationCount||0} observations</span><i>{batch.status}</i></article>)}</div></section><section className="training-panel"><header><div><small>DATASET VERSION</small><h2>Versions & Rollback</h2></div></header><div className="training-history">{data?.versions?.map((version)=><article key={version.id}><strong>{version.id}</strong><span>{version.entryCount||0} entries · {version.status}</span><button disabled={version.id===data?.state?.activeVersion||busy} onClick={()=>setConfirm({type:'rollback',version:version.id})}>Rollback</button></article>)}</div></section>{error&&<p className="admin-error">{error}</p>}{confirm?.type==='complete'&&<Confirm title="Mark training completed?" body="The current batch will be archived and a new empty learning cycle will begin." confirmLabel="Training Completed" onClose={()=>setConfirm(null)} onConfirm={complete}/>} {confirm?.type==='rollback'&&<Confirm title={`Roll back to ${confirm.version}?`} body="The selected dataset version will become active. Existing versions remain archived." confirmLabel="Rollback" onClose={()=>setConfirm(null)} onConfirm={()=>rollback(confirm.version)}/>}</div>;
 }
 
-function normalizeMeanings(entry){
-  const raw=entry.possibleMeanings||entry.meanings||entry.translations||entry.translation||entry.target||[];
-  const list=Array.isArray(raw)?raw:[raw];
-  return unique(list.map((item)=>typeof item==='string'?item:item?.text),10);
-}
-
-export function normalizeKnowledgeEntry(entry){
-  const source=cleanText(entry?.source||entry?.text||entry?.phrase,500);
-  if(!source)return null;
-  const normalizedSource=normalizeForDetection(source).normalized;
-  if(!normalizedSource)return null;
-  const meanings=normalizeMeanings(entry);if(!meanings.length)return null;
-  const detected=detectLanguage(source);
-  const language=cleanText(entry.language||entry.detectedLanguage||detected.detectedLanguage,30).toLowerCase();
-  const variants=unique([source,...(Array.isArray(entry.variants)?entry.variants:String(entry.variants||'').split(/[|;]/))]);
-  return{source,normalizedSource,language,variants,meanings,confidence:clamp(entry.confidence,.9),observations:Math.max(1,Number(entry.observations||entry.usageCount||1)||1)};
-}
-
-function parseCsvRows(text){
-  const rows=[];let row=[],cell='',quoted=false;
-  for(let i=0;i<text.length;i++){
-    const char=text[i];
-    if(char==='"'&&quoted&&text[i+1]==='"'){cell+='"';i++;}
-    else if(char==='"')quoted=!quoted;
-    else if(char===','&&!quoted){row.push(cell);cell='';}
-    else if((char==='\n'||char==='\r')&&!quoted){if(char==='\r'&&text[i+1]==='\n')i++;row.push(cell);if(row.some((value)=>value.trim()))rows.push(row);row=[];cell='';}
-    else cell+=char;
-  }
-  row.push(cell);if(row.some((value)=>value.trim()))rows.push(row);return rows;
-}
-
-function parseCsv(text){
-  const rows=parseCsvRows(text);if(rows.length<2)return[];
-  const headers=rows[0].map((value)=>value.trim().toLowerCase());
-  return rows.slice(1).map((row)=>Object.fromEntries(headers.map((header,index)=>[header,row[index]||'']))).map((row)=>({source:row.source||row.phrase,language:row.language,variants:row.variants,translation:row.translation||row.meaning||row.target,confidence:row.confidence,observations:row.observations||row.usagecount}));
-}
-
-function parseTxt(text){
-  const blocks=text.split(/\n\s*----+\s*\n/g),entries=[];
-  for(const block of blocks){
-    const fields={};let current;
-    for(const raw of block.split(/\r?\n/)){
-      const line=raw.trim();if(!line)continue;
-      const match=line.match(/^([A-Z _]+):\s*(.*)$/i);
-      if(match){current=match[1].trim().toLowerCase().replace(/\s+/g,'');fields[current]=match[2]? [match[2]]:[];}
-      else if(current)fields[current].push(line.replace(/^[-*]\s*/,''));
-    }
-    if(fields.source?.[0])entries.push({source:fields.source[0],language:fields.language?.[0],variants:fields.variants||[],possibleMeanings:fields.possibletranslations||fields.translations||fields.translation||[],confidence:fields.confidence?.[0],observations:fields.observations?.[0]});
-  }
-  if(entries.length)return entries;
-  return text.split(/\r?\n/).map((line)=>line.trim()).filter(Boolean).map((line)=>{const parts=line.split(/\s*(?:=>|\t)\s*/);return parts.length>=2?{source:parts[0],translation:parts.slice(1).join(' => ')}:null;}).filter(Boolean);
-}
-
-export function parseDataset(content,type){
-  const text=String(content||'');if(Buffer.byteLength(text,'utf8')>MAX_UPLOAD_BYTES)throw Object.assign(new Error(`Dataset exceeds the configured ${MAX_UPLOAD_BYTES}-byte upload limit.`),{status:413});
-  let raw;
-  if(type==='json'){const parsed=JSON.parse(text);raw=Array.isArray(parsed)?parsed:parsed.entries;}
-  else if(type==='csv')raw=parseCsv(text);
-  else if(type==='txt')raw=parseTxt(text);
-  else throw Object.assign(new Error('Only JSON, CSV, and TXT datasets are supported.'),{status:400});
-  if(!Array.isArray(raw))throw Object.assign(new Error('Dataset must contain an entries array.'),{status:400});
-  const valid=[],invalid=[];for(const entry of raw){const normalized=normalizeKnowledgeEntry(entry);normalized?valid.push(normalized):invalid.push(entry);}
-  if(!valid.length)throw Object.assign(new Error('Dataset contains no valid translation entries.'),{status:400});
-  if(valid.length>MAX_CANONICAL_ENTRIES)throw Object.assign(new Error(`Dataset exceeds ${MAX_CANONICAL_ENTRIES} canonical entries.`),{status:413});
-  return{entries:valid,invalidCount:invalid.length};
-}
-
-export function mergeKnowledgeEntries(entries){
-  const merged=new Map();
-  for(const entry of entries){
-    const current=merged.get(entry.normalizedSource);
-    if(!current){merged.set(entry.normalizedSource,{...entry,variants:[...entry.variants],meanings:[...entry.meanings]});continue;}
-    current.variants=unique([...current.variants,...entry.variants]);current.meanings=unique([...current.meanings,...entry.meanings],10);current.confidence=Math.max(current.confidence,entry.confidence);current.observations+=entry.observations;
-  }
-  return[...merged.values()];
-}
-
-export function buildKnowledgeDocuments(entries,version){
-  const canonical=mergeKnowledgeEntries(entries),lookup=new Map();
-  for(const entry of canonical){
-    const entryId=`${version}_${hash(entry.normalizedSource)}`;
-    const forms=unique([entry.source,...entry.variants]);
-    forms.forEach((form,index)=>{
-      const normalized=normalizeForDetection(form).normalized;if(!normalized)return;
-      const matchConfidence=entry.confidence>=.85 ? Math.max(entry.confidence,index===0 ? .98 : .9) : entry.confidence*(index===0 ? 1 : .94);
-      lookup.set(`${version}_${hash(normalized)}`,{version,entryId,keyType:index===0?'exact':'variant',matchedForm:normalized,canonicalSource:entry.normalizedSource,language:entry.language,meanings:entry.meanings,confidence:Math.min(.99,matchConfidence),observations:entry.observations,status:'active'});
-      const phonetic=phoneticKey(normalized);if(phonetic){const id=`${version}_p_${hash(phonetic)}`,existing=lookup.get(id),context={canonicalSource:entry.normalizedSource,language:entry.language,meanings:entry.meanings};lookup.set(id,{version,keyType:'phonetic',matchedForm:phonetic,candidates:[...(existing?.candidates||[]),context].slice(0,8),confidence:.8,status:'active'});}
-    });
-  }
-  if(lookup.size>MAX_LOOKUP_KEYS)throw Object.assign(new Error(`Dataset produces more than ${MAX_LOOKUP_KEYS} lookup keys.`),{status:413});
-  return{entries:canonical.map((entry)=>({id:`${version}_${hash(entry.normalizedSource)}`,...entry,version,status:'active'})),lookup:[...lookup.entries()].map(([id,value])=>({id,...value}))};
-}
-
-export async function lookupKnowledge(db,normalizedSource,detection){
-  const state=await db.doc('system/translationKnowledge').get(),version=state.data()?.activeVersion;if(!version)return null;
-  let snapshot=await db.doc(`translationKnowledgeLookup/${version}_${hash(normalizedSource)}`).get(),match=snapshot.data();
-  if(!match){const phonetic=phoneticKey(normalizedSource);if(phonetic){snapshot=await db.doc(`translationKnowledgeLookup/${version}_p_${hash(phonetic)}`).get();match=snapshot.data();}}
-  if(!match)return null;
-  const languageCompatible=!detection?.detectedLanguage||['unknown','mixed',match.language].includes(detection.detectedLanguage);
-  const confidence=clamp(match.confidence*(languageCompatible?1:.72),0);
-  const meanings=match.meanings||match.candidates?.flatMap((candidate)=>candidate.meanings||[])||[];
-  return{version,confidence,language:match.language||match.candidates?.[0]?.language||detection?.detectedLanguage,meanings:unique(meanings,10),canonicalSource:match.canonicalSource||match.candidates?.[0]?.canonicalSource,matchType:match.keyType,strong:confidence>=KNOWLEDGE_CONFIDENCE_THRESHOLD&&meanings.length>0};
-}
-
-export function knowledgeContext(match){
-  if(!match?.meanings?.length)return null;
-  return{language:match.language,knownPhrase:match.canonicalSource,possibleMeanings:match.meanings.slice(0,5),confidence:match.confidence,matchType:match.matchType};
-}
-
-export async function captureLearning(db,{source,normalizedSource,language,translation,provider,confidence,knowledgeMatch}){
-  const safeSource=sanitizeLearningSource(source),safeTranslation=cleanText(translation,500);if(!safeSource||!safeTranslation)return{captured:false,reason:'privacy_or_validation'};
-  const key=normalizedSource||normalizeForDetection(safeSource).normalized;if(!key)return{captured:false,reason:'empty'};
-  const stateRef=db.doc('system/translationKnowledge');
-  return db.runTransaction(async(transaction)=>{
-    const stateSnap=await transaction.get(stateRef),state=stateSnap.data()||{};
-    const batchId=state.currentBatchId||`batch_${Date.now().toString(36)}`,itemRef=db.doc(`translationTrainingItems/${batchId}_${hash(key)}`),batchRef=db.doc(`translationTrainingBatches/${batchId}`);
-    const [itemSnap,batchSnap]=await Promise.all([transaction.get(itemRef),transaction.get(batchRef)]),existing=itemSnap.data(),translations=[...(existing?.translations||[])];
-    const translationIndex=translations.findIndex((item)=>item.text===safeTranslation);
-    if(translationIndex>=0)translations[translationIndex]={...translations[translationIndex],count:Number(translations[translationIndex].count||0)+1,provider};
-    else translations.push({text:safeTranslation,count:1,provider});
-    const isNew=!itemSnap.exists,now=FieldValue.serverTimestamp();
-    transaction.set(itemRef,{batchId,normalizedSource:key,source:safeSource,language,translations:translations.slice(0,10),observations:Number(existing?.observations||0)+1,aiFallbackCount:Number(existing?.aiFallbackCount||0)+1,lastProvider:provider,confidence:clamp(confidence,.5),datasetMatch:knowledgeMatch?{version:knowledgeMatch.version,confidence:knowledgeMatch.confidence,meanings:knowledgeMatch.meanings?.slice(0,5)||[],disagreed:!knowledgeMatch.meanings?.includes(safeTranslation)}:null,status:'pending_training',createdAt:existing?.createdAt||now,updatedAt:now},{merge:true});
-    transaction.set(batchRef,{batchId,status:'pending',entryCount:Number(batchSnap.data()?.entryCount||0)+(isNew?1:0),observationCount:Number(batchSnap.data()?.observationCount||0)+1,createdAt:batchSnap.data()?.createdAt||now,updatedAt:now},{merge:true});
-    transaction.set(stateRef,{currentBatchId:batchId,pendingCount:Number(state.pendingCount||0)+(isNew?1:0),updatedAt:now},{merge:true});
-    return{captured:true,isNew,batchId};
-  });
-}
-
-export function trainingTxt(items){
-  return items.map((item)=>[`SOURCE:\n${item.source}`,`LANGUAGE:\n${item.language||'unknown'}`,`VARIANTS:\n${(item.variants||[]).join('\n')}`,`POSSIBLE TRANSLATIONS:\n${(item.translations||[]).map((translation)=>`${translation.text} (${translation.count})`).join('\n')}`,`CONFIDENCE:\n${Number(item.confidence||0).toFixed(2)}`,`OBSERVATIONS:\n${item.observations||0}`].join('\n\n')).join('\n\n----\n\n');
+export default function AdminApp(){
+  const[authState,setAuthState]=useState('loading'),[section,setSection]=useState('dashboard'),[data,setData]=useState(null),[loading,setLoading]=useState(false),[error,setError]=useState(''),[confirm,setConfirm]=useState(null),[logoutConfirm,setLogoutConfirm]=useState(false),[collapsed,setCollapsed]=useState(false),[mobileNav,setMobileNav]=useState(false),[avatarUser,setAvatarUser]=useState(null);
+  useEffect(()=>{adminSession().then((ok)=>setAuthState(ok?'ready':'login')).catch(()=>setAuthState('login'))},[]);
+  const load=async(current=section)=>{setLoading(true);setError('');try{if(current==='dashboard'){const[summary,messages]=await Promise.all([adminData('dashboard'),adminData('messages')]);setData({...summary,messages});}else if(current==='training')setData(await adminTrainingSummary());else setData(await adminData(current))}catch(reason){if(reason.status===401)setAuthState('login');else setError(reason.message)}finally{setLoading(false)}};
+  useEffect(()=>{if(authState==='ready')load(section)},[authState,section]);
+  const choose=(next)=>{setSection(next);setMobileNav(false)};
+  const execute=async(reason)=>{const value=confirm;setConfirm(null);setLoading(true);try{await adminAction(value.action,value.targetId,reason);await load(section)}catch(err){setError(err.message)}finally{setLoading(false)}};
+  if(authState==='loading')return <div className="session-state"><span className="spinner"/><p>Verifying admin session…</p></div>;
+  if(authState==='login')return <AdminLogin onReady={()=>setAuthState('ready')}/>;
+  return <div className={`admin-shell ${collapsed?'collapsed':''}`}><button className="mobile-menu" onClick={()=>setMobileNav(true)}>☰ <span>Menu</span></button>{mobileNav&&<button className="admin-nav-scrim" onClick={()=>setMobileNav(false)}/>}<aside className={mobileNav?'open':''}><div className="admin-logo"><div className="brand-mark">K</div>{!collapsed&&<strong>KALVI CHAT 🤍</strong>}</div><nav>{sections.map((item)=><button className={section===item?'active':''} onClick={()=>choose(item)} key={item}><span>{item==='dashboard'?'⌂':item==='pending'?'◷':item==='approved'?'✓':item==='rejected'?'×':item==='banned'?'!':'✦'}</span>{!collapsed&&labels[item]}</button>)}</nav><div className="aside-bottom"><button onClick={()=>setLogoutConfirm(true)}><span>↪</span>{!collapsed&&'Logout'}</button><button className="collapse" onClick={()=>setCollapsed(!collapsed)}><span>{collapsed?'→':'←'}</span>{!collapsed&&'Collapse'}</button></div></aside><main className="admin-main"><header><div><small>ADMIN PANEL</small><h1>{labels[section]}</h1></div><button onClick={()=>load(section)} disabled={loading}>↻ Refresh</button></header>{error&&<p className="admin-error">{error}</p>}{loading&&!data?<div className="admin-loading"><span className="spinner"/> Loading…</div>:section==='dashboard'?<><div className="stat-grid">{Object.entries(data?.counts||{}).map(([key,value])=><article key={key}><span>{labels[key]||'Currently online users'}</span><strong>{value}</strong></article>)}</div><section className="chat-moderation"><header><div><small>ACTIVE GENERATION {data?.messages?.generation||1}</small><h2>Chat moderation</h2></div><button className="clear-chat" onClick={()=>setConfirm({action:'clearChat',targetId:''})}>Clear Chat</button></header><div className="moderation-messages">{!data?.messages?.items?.length?<div className="empty-list">No active messages.</div>:data.messages.items.map((item)=><ModerationMessage key={item.id} item={item} onDelete={(targetId)=>setConfirm({action:'deleteMessage',targetId})}/>)}</div>{data?.messages?.nextCursor&&<button className="load-more" disabled={loading} onClick={async()=>{setLoading(true);setError('');try{const next=await adminData('messages',data.messages.nextCursor);setData((old)=>({...old,messages:{...next,items:[...old.messages.items,...next.items]}}))}catch(reason){setError(reason.message)}finally{setLoading(false)}}}>Load more messages</button>}</section></>:section==='training'?<TrainingCenter data={data} onReload={()=>load('training')}/>:<div className="admin-list">{!data?.items?.length?<div className="empty-list">No {labels[section].toLowerCase()} records.</div>:data.items.map((item)=>['pending','rejected'].includes(section)?<RegistrationCard key={item.id} item={item} pending={section==='pending'} onAvatar={setAvatarUser} onAction={(action,targetId)=>setConfirm({action,targetId})}/>:<MemberCard key={item.id} item={item} onAvatar={setAvatarUser} onAction={(action,targetId)=>setConfirm({action,targetId})}/>) }{data?.nextCursor&&<button className="load-more" disabled={loading} onClick={async()=>{setLoading(true);setError('');try{const next=await adminData(section,data.nextCursor);setData((old)=>({...next,items:[...old.items,...next.items]}))}catch(reason){setError(reason.message)}finally{setLoading(false)}}}>Load more</button>}</div>}</main>{avatarUser&&<AvatarPicker user={avatarUser} onClose={()=>setAvatarUser(null)} onChanged={async()=>{setAvatarUser(null);await load(section)}}/>}<ModerationConfirm value={confirm} onClose={()=>setConfirm(null)} onConfirm={execute}/>{logoutConfirm&&<Confirm title="Logout from admin?" body="You will need to authenticate again to continue moderating." confirmLabel="Logout" onClose={()=>setLogoutConfirm(false)} onConfirm={async()=>{await adminLogout();setLogoutConfirm(false);setAuthState('login')}}/>}</div>;
 }
