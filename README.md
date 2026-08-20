@@ -44,6 +44,8 @@ Configure these only in Vercel. Never prefix them with `VITE_`.
 
 ```dotenv
 FIREBASE_SERVICE_ACCOUNT_JSON=
+# Optional; server falls back to VITE_FIREBASE_STORAGE_BUCKET
+FIREBASE_STORAGE_BUCKET=
 ADMIN_USERNAME=
 ADMIN_PASSWORD=
 ADMIN_SESSION_SECRET=
@@ -54,13 +56,22 @@ ADMIN_SESSION_SECRET=
 Optional translation providers:
 
 ```dotenv
+OPENROUTER_API_KEY=
+GEMMA_MODEL=google/gemma-4-31b-it:free
 GEMINI_API_KEY=
 GROQ_API_KEY=
 NVIDIA_API_KEY=
-GEMINI_MODEL=gemini-2.0-flash
+TRANSLATION_PROVIDER_TIMEOUT_MS=10000
+TRANSLATION_PROVIDER_BUDGET_MS=18000
+TRANSLATION_DATASET_MAX_BYTES=2097152
+TRANSLATION_DATASET_MAX_ENTRIES=1000
+TRANSLATION_DATASET_MAX_LOOKUP_KEYS=5000
+GEMINI_MODEL=gemini-3.5-flash
 GROQ_MODEL=llama-3.3-70b-versatile
-NVIDIA_MODEL=meta/llama-3.1-70b-instruct
+NVIDIA_MODEL=meta/llama-3.3-70b-instruct
 ```
+
+Run `node scripts/test-gemma.mjs` or `node scripts/test-gemini.mjs` in a server-only environment without printing API keys. Gemma uses OpenRouter at `https://openrouter.ai/api/v1/chat/completions`; `GEMMA_MODEL` defaults to `google/gemma-4-31b-it:free`.
 
 ## Firebase setup
 
