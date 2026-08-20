@@ -2,6 +2,7 @@ import crypto from 'node:crypto';
 import { FieldValue, Timestamp } from 'firebase-admin/firestore';
 import { requireApprovedUser } from '../server/firebaseAdmin.js';
 import { detectLanguage } from '../server/languageDetection.js';
+import { captureLearning, knowledgeContext, lookupKnowledge } from '../server/translationKnowledge.js';
 import { routeTranslation } from '../server/translationProviders.js';
 
 const exactHash = (text) => crypto.createHash('sha256').update(text).digest('hex');
@@ -72,7 +73,7 @@ export default async function handler(request, response) {
     const detectionStartedAt=Date.now(),detection=detectLanguage(original);logPhase('detection',detectionStartedAt,`result=${detection.detectedLanguage}`);
     const normalizedSource=detection.normalizedText||original.trim().toLowerCase();
     const memoryRef = db.doc(`translationMemory/${exactHash(normalizedSource)}`);
-    let result;
+    let result,knowledgeMatch;
     if (detection.detectedLanguage === 'english' && detection.shouldTranslate === false) {
       result = detection;
     } else {
@@ -83,9 +84,13 @@ export default async function handler(request, response) {
       logPhase('translation_memory',memoryStartedAt,`result=${reusable?'hit':'miss'}`);
       if(reusable)result={...saved,detectedLanguage:saved.sourceLanguage||detection.detectedLanguage,fromMemory:true};
       else{
-        const routerStartedAt=Date.now();
-        try{result=await routeTranslation(original,detection);logPhase('router',routerStartedAt,`result=success provider=${result.provider}`);}
-        catch(error){logPhase('router',routerStartedAt,`result=failed category=${error?.category||error?.name||'error'}`);throw error;}
+        const knowledgeStartedAt=Date.now();knowledgeMatch=await lookupKnowledge(db,normalizedSource,detection);logPhase('translation_knowledge',knowledgeStartedAt,`result=${knowledgeMatch?.strong?'strong':knowledgeMatch?'context':'miss'} confidence=${knowledgeMatch?.confidence?.toFixed?.(2)||0}`);
+        if(knowledgeMatch?.strong)result={detectedLanguage:knowledgeMatch.language||detection.detectedLanguage,translation:knowledgeMatch.meanings[0],confidence:knowledgeMatch.confidence,fromKnowledge:true,provider:'knowledge'};
+        else{
+          const routerStartedAt=Date.now();
+          try{result=await routeTranslation(original,detection,knowledgeContext(knowledgeMatch));logPhase('router',routerStartedAt,`result=success provider=${result.provider}`);}
+          catch(error){logPhase('router',routerStartedAt,`result=failed category=${error?.category||error?.name||'error'}`);throw error;}
+        }
       }
     }
 
@@ -108,11 +113,18 @@ export default async function handler(request, response) {
     if(!applied){outcome='stale';return response.status(409).json({error:'Message is no longer active'});}
     settled=true;outcome=update.translationStatus;
 
-    if(!result.fromMemory&&result.detectedLanguage!=='english'&&result.confidence>=.95){
+    const aiProvider=['gemma','nvidia','gemini','groq'].includes(result.provider);
+    if(aiProvider){
+      const learningStartedAt=Date.now();
+      await captureLearning(db,{source:original,normalizedSource,language:result.detectedLanguage,translation:result.translation,provider:result.provider,confidence:result.confidence,knowledgeMatch})
+        .then((capture)=>logPhase('learning_capture',learningStartedAt,`result=${capture.captured?'captured':'skipped'}`))
+        .catch((error)=>console.error(`[translation] learningCapture=failed error=${error?.name||'Error'}`));
+    }
+    if(!result.fromMemory&&!result.fromKnowledge&&result.detectedLanguage!=='english'&&result.confidence>=.95){
       await memoryRef.set({source:original,normalizedSource,sourceLanguage:result.detectedLanguage,targetLanguage:'english',translation:result.translation,confidence:result.confidence,trusted:true,provider:result.provider,updatedAt:FieldValue.serverTimestamp()})
         .catch((error)=>console.error(`[translation] memoryWrite=failed error=${error?.name||'Error'}`));
     }
-    const source=result.fromMemory?'memory':(result.provider||'local');
+    const source=result.fromMemory?'memory':result.fromKnowledge?'knowledge':(result.provider||'local');
     return response.status(200).json({status:update.translationStatus,detectedLanguage:result.detectedLanguage,cached:Boolean(result.fromMemory),source});
   } catch (error) {
     outcome='failed';settled=await settleOwnedLease(db,messageRef,leaseId);
