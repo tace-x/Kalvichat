@@ -1,6 +1,9 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { readFile } from 'node:fs/promises';
 import { buildKnowledgeDocuments, lookupKnowledge, MAX_CANONICAL_ENTRIES, MAX_LOOKUP_KEYS, MAX_UPLOAD_BYTES, mergeKnowledgeEntries, normalizeKnowledgeEntry, parseDataset, sanitizeLearningSource, trainingTxt } from '../server/translationKnowledge.js';
+
+test('beta training endpoint has no Firebase Storage dependency',async()=>{const source=await readFile(new URL('../api/admin-training.js',import.meta.url),'utf8');assert.doesNotMatch(source,/firebase-admin\/storage|getStorage\(|FIREBASE_STORAGE_BUCKET|\.file\([^)]*\)\.save/);});
 
 test('beta limits retain safe defaults',()=>{assert.equal(MAX_UPLOAD_BYTES,2097152);assert.equal(MAX_CANONICAL_ENTRIES,1000);assert.equal(MAX_LOOKUP_KEYS,5000);});
 
