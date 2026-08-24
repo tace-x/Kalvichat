@@ -2,11 +2,13 @@ import { lazy, memo, Suspense, useCallback, useEffect, useLayoutEffect, useRef, 
 import { useChat } from './hooks/useChat';
 import { useSession } from './hooks/useSession';
 import { useTypingPresence } from './hooks/useTypingPresence';
+import { useDM } from './hooks/useDM';
 import { firebaseMode } from './firebase';
 import AuthPage from './components/AuthPage';
 import AccountState from './components/AccountState';
 import Confirm from './components/Confirm';
-import { logout } from './services/authService';
+import DMInbox from './components/DMInbox';
+import { logout, reportDmMessage } from './services/authService';
 import './styles.css';
 import './authAdmin.css';
 import './polish.css';
@@ -21,10 +23,11 @@ const persistTheme=(theme)=>{try{localStorage.setItem('kalvi-theme',theme)}catch
 
 function Icon({name}) { const icons={sun:'☼',moon:'◐',down:'↓',back:'←',send:'➤',more:'•••',reply:'↩'}; return <span aria-hidden="true">{icons[name]}</span> }
 
-const Header=memo(function Header({theme,setTheme,anyoneOnline,onLogout}){
+const Header=memo(function Header({theme,setTheme,anyoneOnline,onLogout,onBack,title='KALVI CHAT',symbol='🤍',avatar}){
   return <header className="header glass">
-    <div className="brand-mark" aria-hidden="true">K</div>
-    <div className="title-wrap"><h1>KALVI CHAT</h1><span className="handshake">🤍</span></div>
+    {onBack&&<button className="icon-button header-back" aria-label="Back to messages" onClick={onBack}>←</button>}
+    {avatar?<img className="header-avatar" src={avatar} alt=""/>:<div className="brand-mark" aria-hidden="true">K</div>}
+    <div className="title-wrap"><h1>{title}</h1><span className="handshake">{symbol}</span></div>
     <div className="header-actions">{anyoneOnline&&<span className="presence-dot" title="Friends are online" />}
       <button className="icon-button" aria-label={`Switch to ${theme==='light'?'dark':'light'} mode`} onClick={()=>setTheme(theme==='light'?'dark':'light')}><Icon name={theme==='light'?'moon':'sun'}/></button>
       {onLogout&&<button className="icon-button logout-icon" aria-label="Logout" onClick={onLogout}>↪</button>}
@@ -75,7 +78,7 @@ const Message= memo(function Message({message,firstInStreak,showTime,onReact,onA
   </article>
 });
 
-function ActionPopover({data,onClose,onReply,onReact,onEdit,onDelete,currentUserId,muted}){
+function ActionPopover({data,onClose,onReply,onReact,onEdit,onDelete,onReport,currentUserId,muted}){
   const [picker,setPicker]=useState(false),[now,setNow]=useState(Date.now());
   useEffect(()=>{setPicker(false);setNow(Date.now());if(!data)return undefined;const remaining=new Date(data.message.createdAt).getTime()+600000-Date.now();if(remaining<=0)return undefined;const timer=setTimeout(()=>setNow(Date.now()),remaining+5);return()=>clearTimeout(timer)},[data?.message?.id]);
   if(!data)return null; const m=data.message, own=m.senderId===currentUserId;
@@ -87,6 +90,7 @@ function ActionPopover({data,onClose,onReply,onReact,onEdit,onDelete,currentUser
       {!muted&&<button onClick={()=>setPicker(true)}>♡ React</button>}
       {editable&&<button onClick={()=>{onEdit(m);onClose()}}>✎ Edit</button>}
       {editable&&<button className="danger" onClick={()=>{onDelete(m);onClose()}}>⌫ Delete for everyone</button>}
+      {!own&&onReport&&<button className="danger" onClick={()=>{onReport(m);onClose()}}>⚑ Report message</button>}
     </>}
   </div></>
 }
@@ -144,32 +148,40 @@ function SessionState({status,error}){
   return <div className="session-state"><div className="brand-mark">K</div><h1>KALVI CHAT 🤍</h1>{status==='loading'?<><span className="spinner"/><p>Verifying your session…</p></>:<p>{error||'Authentication is temporarily unavailable.'}</p>}</div>
 }
 
+function ReportModal({message,onClose,onSubmit}){const[reason,setReason]=useState('');return <div className="modal-layer" role="dialog" aria-modal="true"><button className="modal-scrim" onClick={onClose}/><div className="confirm glass"><div className="confirm-icon">!</div><h2>Report private message?</h2><p>The reported message will be securely shared with the moderator for review.</p><label className="report-reason">Reason<textarea value={reason} maxLength="500" onChange={(event)=>setReason(event.target.value)} placeholder="Describe the problem…"/></label><div><button className="secondary" onClick={onClose}>Cancel</button><button className="destructive" disabled={!reason.trim()} onClick={()=>onSubmit(message,reason.trim())}>Report</button></div></div></div>}
+
 function UserApp(){
   const session=useSession();
-  const [theme,setTheme]=useState(initialTheme);
-  const chat=useChat(session.user);
+  const [theme,setTheme]=useState(initialTheme),[view,setView]=useState('inbox'),[activeConversation,setActiveConversation]=useState(null);
+  const groupChat=useChat(view==='group'?session.user:null);
   const presence=useTypingPresence(session.user);
-  const [reply,setReply]=useState(),[editing,setEditing]=useState(),[confirm,setConfirm]=useState(),[popover,setPopover]=useState(),[newCount,setNewCount]=useState(0),[authMode,setAuthMode]=useState('login'),[accountOverride,setAccountOverride]=useState(null);
+  const dmChat=useDM(view==='dm'?activeConversation:null,session.user,activeConversation?.participant);
+  const chat=view==='dm'?dmChat:groupChat;
+  const [reply,setReply]=useState(),[editing,setEditing]=useState(),[confirm,setConfirm]=useState(),[popover,setPopover]=useState(),[newCount,setNewCount]=useState(0),[authMode,setAuthMode]=useState('login'),[accountOverride,setAccountOverride]=useState(null),[reportMessage,setReportMessage]=useState(null);
   useEffect(()=>{document.documentElement.dataset.theme=theme;persistTheme(theme);const meta=document.querySelector('meta[name=theme-color]');if(meta)meta.content=theme==='light'?'#f5f2eb':'#111816'},[theme]);
   const askLogout=useCallback(()=>setConfirm({title:'Logout?',body:'You will need to enter your username and password to return.',label:'Logout',run:async()=>{await logout();setAccountOverride(null);setAuthMode('login')}}),[]);
-  const registerAgain=useCallback(async()=>{await logout();setAccountOverride(null);setAuthMode('register')},[]);
+  const registerAgain=useCallback(async()=>{await logout(false);setAccountOverride(null);setAuthMode('register')},[]);
   const send=useCallback((text)=>{if(editing){setConfirm({title:'Save this edit?',body:'The translation will be regenerated. The original 10-minute timer will not change.',label:'Save edit',run:()=>{if(Date.now()-new Date(editing.createdAt).getTime()<600000)chat.edit(editing.id,text);setEditing();}})}else{chat.send(text,reply&&{id:reply.id,text:reply.originalText,deleted:Boolean(reply.deleted||reply.deletedAt)});setReply()}},[editing,reply,chat.edit,chat.send]);
   const askDelete=useCallback((message)=>setConfirm({title:'Delete for everyone?',body:'This message will be replaced for everyone. This action cannot be undone.',label:'Delete message',run:()=>{if(Date.now()-new Date(message.createdAt).getTime()<600000)chat.remove(message.id)}}),[chat.remove]);
   const showMessageActions=useCallback((message,element)=>setPopover({message,rect:element.getBoundingClientRect()}),[]);
   const cancelReply=useCallback(()=>setReply(),[]),cancelEdit=useCallback(()=>setEditing(),[]),closePopover=useCallback(()=>setPopover(),[]),closeConfirm=useCallback(()=>setConfirm(),[]);
   const bottom=useCallback(()=>setNewCount(0),[]);
+  const openView=useCallback((next,conversation=null)=>{setReply();setEditing();setPopover();setNewCount(0);setActiveConversation(conversation);setView(next);},[]);
+  const submitReport=useCallback(async(message,reason)=>{try{await reportDmMessage(activeConversation.id,message.id,reason);setReportMessage(null);}catch(error){setReportMessage(null);setConfirm({title:'Report failed',body:error.message,label:'Close',run:()=>{}});}},[activeConversation]);
   const acceptConfirm=useCallback(()=>{confirm?.run();setConfirm()},[confirm]);
   const accountStatus=accountOverride?.status||session.status;
   if(['loading','error','blocked'].includes(session.status))return <div className="app-shell"><SessionState status={session.status} error={session.error}/></div>;
   if(accountStatus==='signed-out')return <AuthPage key={authMode} initialMode={authMode} onAccountState={setAccountOverride}/>;
   if(['pending','rejected','banned'].includes(accountStatus))return <><AccountState status={accountStatus} account={session.account||accountOverride} onLogout={askLogout} onRegisterAgain={registerAgain}/>{confirm&&<Confirm title={confirm.title} body={confirm.body} confirmLabel={confirm.label} onClose={closeConfirm} onConfirm={acceptConfirm}/>}</>;
-  return <div className="app-shell"><div className="chat-app"><Header theme={theme} setTheme={setTheme} anyoneOnline={firebaseMode==='demo'||presence.anyoneOnline} onLogout={firebaseMode==='demo'?null:askLogout}/>
+  if(view==='inbox')return <div className="app-shell"><div className="chat-app inbox-app"><Header theme={theme} setTheme={setTheme} anyoneOnline={firebaseMode==='demo'||presence.anyoneOnline} onLogout={firebaseMode==='demo'?null:askLogout}/><DMInbox user={session.user} onOpenGroup={()=>openView('group')} onOpenConversation={(conversation)=>openView('dm',conversation)}/>{confirm&&<Confirm title={confirm.title} body={confirm.body} confirmLabel={confirm.label} onClose={closeConfirm} onConfirm={acceptConfirm}/>}</div></div>;
+  const isDM=view==='dm';
+  return <div className="app-shell"><div className="chat-app"><Header theme={theme} setTheme={setTheme} anyoneOnline={firebaseMode==='demo'||presence.anyoneOnline} onLogout={firebaseMode==='demo'?null:askLogout} onBack={()=>openView('inbox')} title={isDM?activeConversation?.participant?.name:'KALVI CHAT'} symbol={isDM?'': '🤍'} avatar={isDM?activeConversation?.participant?.avatar:null}/>
     {chat.error&&<div className="connection-toast" role="status">{chat.error}</div>}
     <History {...chat} muted={session.user.muted} currentUserId={session.user.id} onRead={chat.markRead} onReact={chat.react} onAction={showMessageActions} onNewCount={setNewCount} newCount={newCount} onBottom={bottom}/>
-    <div className={`typing ${presence.typingText?'':'typing-empty'}`} aria-live="polite">{presence.typingText&&<><span/><span/><span/> {presence.typingText}</>}</div>
-    <Composer muted={session.user.muted} onSend={send} onTyping={presence.signalTyping} reply={reply} onCancelReply={cancelReply} editing={editing} onCancelEdit={cancelEdit}/>
-    <ActionPopover muted={session.user.muted} data={popover} currentUserId={session.user.id} onClose={closePopover} onReply={setReply} onReact={chat.react} onEdit={setEditing} onDelete={askDelete}/>
-    {confirm&&<Confirm title={confirm.title} body={confirm.body} confirmLabel={confirm.label} onClose={closeConfirm} onConfirm={acceptConfirm}/>}
+    <div className={`typing ${(isDM?chat.typingText:presence.typingText)?'':'typing-empty'}`} aria-live="polite">{(isDM?chat.typingText:presence.typingText)&&<><span/><span/><span/> {isDM?chat.typingText:presence.typingText}</>}</div>
+    <Composer muted={session.user.muted} onSend={send} onTyping={isDM?chat.signalTyping:presence.signalTyping} reply={reply} onCancelReply={cancelReply} editing={editing} onCancelEdit={cancelEdit}/>
+    <ActionPopover muted={session.user.muted} data={popover} currentUserId={session.user.id} onClose={closePopover} onReply={setReply} onReact={chat.react} onEdit={setEditing} onDelete={askDelete} onReport={isDM?setReportMessage:null}/>
+    {reportMessage&&<ReportModal message={reportMessage} onClose={()=>setReportMessage(null)} onSubmit={submitReport}/>} {confirm&&<Confirm title={confirm.title} body={confirm.body} confirmLabel={confirm.label} onClose={closeConfirm} onConfirm={acceptConfirm}/>}
   </div></div>
 }
 

@@ -44,14 +44,14 @@ Configure these only in Vercel. Never prefix them with `VITE_`.
 
 ```dotenv
 FIREBASE_SERVICE_ACCOUNT_JSON=
-# Optional; server falls back to VITE_FIREBASE_STORAGE_BUCKET
-FIREBASE_STORAGE_BUCKET=
 ADMIN_USERNAME=
 ADMIN_PASSWORD=
 ADMIN_SESSION_SECRET=
 ```
 
 `ADMIN_SESSION_SECRET` must be at least 32 cryptographically random characters. The admin password and session secret never enter the browser bundle.
+
+Firebase Storage is optional for this beta. Dataset uploads are parsed server-side and only structured knowledge/version metadata is stored in Firestore. Training TXT exports are generated dynamically from Firestore through the authenticated admin endpoint; no uploaded or exported file blob is persisted.
 
 Optional translation providers:
 
@@ -136,6 +136,10 @@ All approve/reject/mute/unmute/ban/unban, message-delete, and clear-chat operati
 - `translationMemory/{hash}` — trusted server-only memory
 
 Admin list pages perform status-filtered, 20-record paginated queries. Dashboard uses aggregation counts instead of downloading whole collections. Chat retains newest-20 realtime listening and 20-message backward pagination.
+
+## Private messages
+
+Approved users can search safe chat profiles and open one deterministic DM conversation per user pair. Private messages, reactions, read watermarks, typing state, and reports are participant-scoped by Firestore Rules. DM translation reuses the shared translation memory/knowledge/provider pipeline but private DM content is not promoted into shared learning data. Deploy the updated Firestore Rules and indexes before enabling DMs.
 
 ## Build and deploy
 

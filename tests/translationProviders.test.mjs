@@ -33,6 +33,12 @@ test('Gemma uses OpenRouter and stops all fallback providers',async()=>{
   assert.equal(value.provider,'gemma');assert.equal(calls.length,1);assert.equal(calls[0].provider,'gemma');assert.equal(calls[0].url,'https://openrouter.ai/api/v1/chat/completions');assert.equal(calls[0].options.headers.authorization,'Bearer openrouter-secret-for-test');assert.equal(JSON.parse(calls[0].options.body).model,'google/gemma-4-31b-it:free');
 });
 
+test('weak dataset context is passed to the AI provider',async()=>{
+  const {routeTranslation}=await loadRouter({gemma:true});let prompt='';
+  globalThis.fetch=async(url,options)=>{prompt=JSON.parse(options.body).messages[0].content;return response(providerName(String(url)))};
+  await captureLogs(()=>routeTranslation('sughamaano da bro?',detection,{knownPhrase:'sughamaano',possibleMeanings:['How are you?'],confidence:.8}));assert.match(prompt,/How are you\?/);assert.match(prompt,/context only/);
+});
+
 test('Gemma failure falls back to NVIDIA',async()=>{
   const {routeTranslation}=await loadRouter({gemma:true});const calls=[];
   globalThis.fetch=async(url)=>{const provider=providerName(String(url));calls.push(provider);return response(provider,provider==='gemma'?503:200)};

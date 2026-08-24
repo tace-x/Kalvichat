@@ -3,6 +3,7 @@ import {
   orderBy, query, serverTimestamp, setDoc, startAfter, updateDoc, where,
 } from 'firebase/firestore';
 import { auth, db, firebaseEnabled } from '../firebase';
+import { subscribeReactionWindow } from './reactionService';
 
 export const PAGE_SIZE = 20;
 const messagesRef = () => collection(db, 'chatMessages');
@@ -67,18 +68,7 @@ export function subscribeToNewest(generation, callback, onError) {
 }
 
 export function subscribeToNewestReactions(messageIds, callback, onError) {
-  if (!messageIds.length) return () => {};
-  const q = query(collection(db, 'chatReactions'), where('messageId', 'in', messageIds.slice(-PAGE_SIZE)));
-  return onSnapshot(q, (snapshot) => {
-    const grouped = {};
-    snapshot.forEach((item) => {
-      const value = item.data();
-      grouped[value.messageId] ||= { counts: {}, mine: null };
-      grouped[value.messageId].counts[value.emoji] = (grouped[value.messageId].counts[value.emoji] || 0) + 1;
-      if (value.userId === auth.currentUser?.uid) grouped[value.messageId].mine = value.emoji;
-    });
-    callback(grouped);
-  }, onError);
+  return subscribeReactionWindow({collectionName:'chatReactions',messageIds,userId:auth.currentUser?.uid,onData:callback,onError});
 }
 
 export async function sendMessage(message) {

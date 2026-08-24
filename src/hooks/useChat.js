@@ -123,7 +123,7 @@ export function useChat(user) {
     return () => clearTimeout(deliveredTimer.current);
   }, [latestMessage?.id, user]);
 
-  const newestIds = useMemo(() => messages.slice(-api.PAGE_SIZE).map((message) => message.id), [messages]);
+  const newestIds = useMemo(() => messages.map((message) => message.id), [messages]);
   const newestKey = newestIds.join('|');
   useEffect(() => {
     if (!firebaseEnabled || !user || !newestIds.length) return undefined;
@@ -131,7 +131,7 @@ export function useChat(user) {
       if (!newestIds.includes(message.id)) return message;
       const value = grouped[message.id] || { counts: {}, mine: null };
       return { ...message, reactions: value.counts, myReaction: value.mine };
-    })), () => {});
+    })), () => setError('Reaction updates are temporarily unavailable.'));
   // newestKey intentionally stabilizes the ID-window dependency.
   }, [newestKey, user?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 

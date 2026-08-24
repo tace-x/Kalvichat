@@ -1,5 +1,6 @@
 import { signInWithCustomToken, signOut } from 'firebase/auth';
-import { auth, firebaseEnabled } from '../firebase';
+import { auth, db, firebaseEnabled } from '../firebase';
+import { clearIndexedDbPersistence, terminate } from 'firebase/firestore';
 
 async function post(url,body){
   const response=await fetch(url,{method:'POST',headers:{'content-type':'application/json'},credentials:'same-origin',body:JSON.stringify(body)});
@@ -19,7 +20,7 @@ export async function register(values){
   await signInWithCustomToken(auth,result.customToken);
   return result;
 }
-export const logout=()=>auth?signOut(auth):Promise.resolve();
+export const logout=async(clearPrivateCache=true)=>{if(!auth)return;await signOut(auth);if(clearPrivateCache&&db){try{await terminate(db);await clearIndexedDbPersistence(db);}catch{/* Another tab may still own persistence; authorization remains enforced. */}if(typeof window!=='undefined')window.location.replace('/');}};
 
 export async function adminSession(){const r=await fetch('/api/admin-session',{credentials:'same-origin'});return r.ok;}
 export const adminLogin=(username,password)=>post('/api/admin-login',{username,password});
@@ -36,3 +37,9 @@ export const adminTrainingUpload=(payload)=>trainingPost({action:'upload',...pay
 export const adminTrainingComplete=()=>trainingPost({action:'complete'});
 export const adminTrainingRollback=(version)=>trainingPost({action:'rollback',version});
 export async function adminTrainingExport(batchId){const response=await fetch(`/api/admin-training?action=export&batchId=${encodeURIComponent(batchId)}`,{credentials:'same-origin'});if(!response.ok){const data=await response.json().catch(()=>({}));throw new Error(data.error||'Could not export training data.');}const blob=await response.blob(),url=URL.createObjectURL(blob),link=document.createElement('a');link.href=url;link.download=`kalvi-training-${batchId}.txt`;link.click();URL.revokeObjectURL(url);}
+async function dmRequest(url,options={}){const token=await auth.currentUser?.getIdToken();if(!token)throw new Error('Authentication required.');const response=await fetch(url,{...options,headers:{'content-type':'application/json',authorization:`Bearer ${token}`,...options.headers}});const data=await response.json().catch(()=>({}));if(!response.ok)throw Object.assign(new Error(data.error||`DM request failed (${response.status}).`),{status:response.status});return data;}
+export const searchDmUsers=(query)=>dmRequest(`/api/dm?q=${encodeURIComponent(query)}`);
+export const startDm=(targetUserId)=>dmRequest('/api/dm',{method:'POST',body:JSON.stringify({action:'start',targetUserId})});
+export const reportDmMessage=(conversationId,messageId,reason)=>dmRequest('/api/dm',{method:'POST',body:JSON.stringify({action:'report',conversationId,messageId,reason})});
+export async function adminDmReports(){const response=await fetch('/api/admin-dm-reports',{credentials:'same-origin'});const data=await response.json().catch(()=>({}));if(!response.ok)throw Object.assign(new Error(data.error||'Could not load DM reports.'),{status:response.status});return data;}
+export const dismissDmReport=(reportId)=>post('/api/admin-dm-reports',{action:'dismiss',reportId});
