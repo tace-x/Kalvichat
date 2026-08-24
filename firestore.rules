@@ -89,19 +89,19 @@ service cloud.firestore {
             && request.resource.data.deleted == false
             && request.resource.data.translationStatus == 'pending'
             && request.resource.data.detectedLanguage == 'pending'
-            && !request.resource.data.keys().hasAny(['hinglishText','manglishText'])
+            && !request.resource.data.keys().hasAny(['englishText','hinglishText','manglishText'])
             && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
               'originalText','edited','editedAt','updatedAt','detectedLanguage',
-              'translationStatus','hinglishText','manglishText'
+              'translationStatus','englishText','hinglishText','manglishText'
             ]))
           ||
           // User delete: retain only an irreversible tombstone.
-          (!request.resource.data.keys().hasAny(['originalText','hinglishText','manglishText'])
+          (!request.resource.data.keys().hasAny(['originalText','englishText','hinglishText','manglishText'])
             && request.resource.data.deleted == true
             && request.resource.data.deletedByAdmin == false
             && request.resource.data.translationStatus == 'deleted'
             && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
-              'originalText','hinglishText','manglishText','deleted','deletedAt',
+              'originalText','englishText','hinglishText','manglishText','deleted','deletedAt',
               'updatedAt','translationStatus'
             ]))
         );
@@ -156,6 +156,107 @@ service cloud.firestore {
         && request.resource.data.heartbeatAt == request.time;
       allow delete: if false;
     }
+
+    function dmParticipant(conversationId) {
+      return activeMember()
+        && exists(/databases/$(database)/documents/dmConversations/$(conversationId))
+        && request.auth.uid in get(/databases/$(database)/documents/dmConversations/$(conversationId)).data.participantIds;
+    }
+    function activeDmMessage(conversationId, messageId) {
+      return dmParticipant(conversationId)
+        && exists(/databases/$(database)/documents/dmConversations/$(conversationId)/messages/$(messageId))
+        && get(/databases/$(database)/documents/dmConversations/$(conversationId)/messages/$(messageId)).data.deleted != true;
+    }
+
+    match /dmConversations/{conversationId} {
+      allow read: if activeMember() && request.auth.uid in resource.data.participantIds;
+      allow create, delete: if false;
+      allow update: if canParticipate() && request.auth.uid in resource.data.participantIds
+        && request.resource.data.participantIds == resource.data.participantIds
+        && request.resource.data.type == 'dm'
+        && request.resource.data.lastSenderId == request.auth.uid
+        && request.resource.data.lastMessageAt == request.time
+        && request.resource.data.updatedAt == request.time
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['lastMessageAt','lastMessagePreview','lastSenderId','updatedAt']);
+
+      match /messages/{messageId} {
+        allow read: if dmParticipant(conversationId);
+        allow create: if canParticipate() && dmParticipant(conversationId)
+          && request.resource.data.senderId == request.auth.uid
+          && request.resource.data.senderName == ownMember().data.name
+          && request.resource.data.senderColor == ownMember().data.senderColor
+          && request.resource.data.senderAvatar == ownMember().data.avatar
+          && request.resource.data.generation == get(/databases/$(database)/documents/dmConversations/$(conversationId)).data.activeGeneration
+          && messageId.matches('^' + request.auth.uid + '_.*$')
+          && request.resource.data.originalText is string
+          && request.resource.data.originalText.size() > 0
+          && request.resource.data.originalText.size() <= 8000
+          && request.resource.data.detectedLanguage == 'pending'
+          && request.resource.data.translationStatus == 'pending'
+          && request.resource.data.createdAt == request.time
+          && request.resource.data.updatedAt == request.time
+          && request.resource.data.edited == false
+          && request.resource.data.deleted == false
+          && request.resource.data.deletedByAdmin == false;
+        allow update: if canParticipate() && dmParticipant(conversationId)
+          && resource.data.senderId == request.auth.uid
+          && request.time < resource.data.createdAt + duration.value(10, 'm')
+          && request.resource.data.senderId == resource.data.senderId
+          && request.resource.data.createdAt == resource.data.createdAt
+          && request.resource.data.generation == resource.data.generation
+          && request.resource.data.updatedAt == request.time
+          && (
+            (request.resource.data.originalText is string
+              && request.resource.data.originalText.size() > 0
+              && request.resource.data.edited == true
+              && request.resource.data.deleted == false
+              && request.resource.data.translationStatus == 'pending'
+              && request.resource.data.detectedLanguage == 'pending'
+              && !request.resource.data.keys().hasAny(['englishText','hinglishText','manglishText'])
+              && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['originalText','edited','editedAt','updatedAt','detectedLanguage','translationStatus','englishText','hinglishText','manglishText']))
+            ||
+            (!request.resource.data.keys().hasAny(['originalText','englishText','hinglishText','manglishText'])
+              && request.resource.data.deleted == true
+              && request.resource.data.deletedByAdmin == false
+              && request.resource.data.translationStatus == 'deleted'
+              && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['originalText','englishText','hinglishText','manglishText','deleted','deletedAt','updatedAt','translationStatus']))
+          );
+        allow delete: if false;
+      }
+    }
+
+    match /dmReactions/{reactionId} {
+      allow read: if activeDmMessage(resource.data.conversationId, resource.data.messageId);
+      allow create, update: if canParticipate() && dmParticipant(request.resource.data.conversationId)
+        && request.resource.data.userId == request.auth.uid
+        && reactionId == request.resource.data.conversationId + '_' + request.resource.data.messageId + '_' + request.auth.uid
+        && request.resource.data.emoji in ['👍','❤️','😂','😮','😢','🔥','👏','🎉','😍']
+        && request.resource.data.updatedAt == request.time
+        && activeDmMessage(request.resource.data.conversationId, request.resource.data.messageId);
+      allow delete: if canParticipate() && resource.data.userId == request.auth.uid && dmParticipant(resource.data.conversationId);
+    }
+
+    match /dmReadStates/{stateId} {
+      allow read: if dmParticipant(resource.data.conversationId);
+      allow create, update: if activeMember()
+        && request.resource.data.userId == request.auth.uid
+        && stateId == request.resource.data.conversationId + '_' + request.auth.uid
+        && dmParticipant(request.resource.data.conversationId)
+        && request.resource.data.updatedAt == request.time;
+      allow delete: if false;
+    }
+
+    match /dmTyping/{typingId} {
+      allow read: if dmParticipant(resource.data.conversationId);
+      allow create, update: if canParticipate()
+        && request.resource.data.userId == request.auth.uid
+        && typingId == request.resource.data.conversationId + '_' + request.auth.uid
+        && dmParticipant(request.resource.data.conversationId)
+        && request.resource.data.expiresAt <= request.time + duration.value(10, 's');
+      allow delete: if activeMember() && resource.data.userId == request.auth.uid;
+    }
+
+    match /dmReports/{reportId} { allow read, write: if false; }
 
     // Private account documents: browser can read only its own approval state.
     match /members/{userId} {

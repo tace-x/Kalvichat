@@ -1,4 +1,4 @@
-# MALLU JAABI — Full Project Report
+# KALVI CHAT 🤍 — Full Project Report
 
 **Report scope:** all application, server, security, deployment, and asset files currently in the repository.  
 **Current code status:** production build passes locally; Firestore Rules compile in the emulator; no real Firebase or Vercel project is connected in this workspace.
@@ -7,7 +7,7 @@
 
 ## 1. Executive summary
 
-MALLU JAABI is a private, approval-only group chat with:
+KALVI CHAT 🤍 is a private, approval-only group chat with:
 
 - Username/password registration and login backed by Firebase Authentication
 - Pending, approved, rejected, banned, and muted account handling

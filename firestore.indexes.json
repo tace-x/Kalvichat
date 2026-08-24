@@ -1,6 +1,30 @@
 {
   "indexes": [
     {
+      "collectionGroup": "dmConversations",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "participantIds", "arrayConfig": "CONTAINS" },
+        { "fieldPath": "lastMessageAt", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "dmReactions",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "conversationId", "order": "ASCENDING" },
+        { "fieldPath": "messageId", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "dmReports",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "status", "order": "ASCENDING" },
+        { "fieldPath": "createdAt", "order": "DESCENDING" }
+      ]
+    },
+    {
       "collectionGroup": "chatMessages",
       "queryScope": "COLLECTION",
       "fields": [
@@ -35,6 +59,7 @@
   ],
   "fieldOverrides": [
     { "collectionGroup": "chatMessages", "fieldPath": "originalText", "indexes": [] },
+    { "collectionGroup": "chatMessages", "fieldPath": "englishText", "indexes": [] },
     { "collectionGroup": "chatMessages", "fieldPath": "hinglishText", "indexes": [] },
     { "collectionGroup": "chatMessages", "fieldPath": "manglishText", "indexes": [] },
     { "collectionGroup": "registrations", "fieldPath": "phone", "indexes": [] },

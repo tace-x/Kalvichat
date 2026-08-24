@@ -36,15 +36,19 @@ export default async function handler(request, response) {
   let messageRef,db,leaseId,leaseAcquired=false,settled=false;
   try {
     const authStartedAt=Date.now();const approved=await requireApprovedUser(request);db=approved.db;logPhase('authentication',authStartedAt);
-    const messageId = String(request.body?.messageId || '');
+    const messageId = String(request.body?.messageId || ''),conversationId=String(request.body?.conversationId||'');
     if (!/^[A-Za-z0-9_-]{10,220}$/.test(messageId)) return response.status(400).json({ error: 'Invalid message ID' });
-    messageRef = db.doc(`chatMessages/${messageId}`);
+    const isDM=Boolean(conversationId);
+    if(isDM&&!/^[a-f0-9]{40}$/.test(conversationId))return response.status(400).json({error:'Invalid conversation.'});
+    messageRef=isDM?db.doc(`dmConversations/${conversationId}/messages/${messageId}`):db.doc(`chatMessages/${messageId}`);
+    const scopeStateRef=isDM?db.doc(`dmConversations/${conversationId}`):db.doc('system/chatState');
     const readStartedAt=Date.now();
-    const [snapshot,chatState]=await Promise.all([messageRef.get(),db.doc('system/chatState').get()]);
+    const [snapshot,scopeState]=await Promise.all([messageRef.get(),scopeStateRef.get()]);
     logPhase('firestore_read',readStartedAt);
     if (!snapshot.exists) return response.status(404).json({ error: 'Message not found' });
+    if(isDM&&(!scopeState.exists||!scopeState.data().participantIds.includes(approved.uid)))return response.status(403).json({error:'Forbidden'});
     const message = snapshot.data();
-    const activeGeneration = Number(chatState.data()?.activeGeneration || 1);
+    const activeGeneration = Number(scopeState.data()?.activeGeneration || 1);
     if (message.generation !== activeGeneration) return response.status(409).json({ error: 'Message is not in the active conversation' });
     if (message.deleted || !message.originalText) return response.status(409).json({ error: 'Message is deleted' });
     if (['complete','none'].includes(message.translationStatus)) return response.status(200).json({ status: message.translationStatus, cached: true });
@@ -103,7 +107,7 @@ export default async function handler(request, response) {
     if(result.detectedLanguage!=='english')update.englishText=result.translation;
     const writeStartedAt=Date.now();
     const applied=await db.runTransaction(async(transaction)=>{
-      const [fresh,state]=await Promise.all([transaction.get(messageRef),transaction.get(db.doc('system/chatState'))]);
+      const [fresh,state]=await Promise.all([transaction.get(messageRef),transaction.get(scopeStateRef)]);
       if(!fresh.exists)return false;
       const value=fresh.data(),generation=Number(state.data()?.activeGeneration||1);
       if(value.deleted||value.generation!==generation||value.translationLeaseId!==leaseId||value.originalText!==original)return false;
@@ -114,13 +118,13 @@ export default async function handler(request, response) {
     settled=true;outcome=update.translationStatus;
 
     const aiProvider=['gemma','nvidia','gemini','groq'].includes(result.provider);
-    if(aiProvider){
+    if(aiProvider&&!isDM){
       const learningStartedAt=Date.now();
       await captureLearning(db,{source:original,normalizedSource,language:result.detectedLanguage,translation:result.translation,provider:result.provider,confidence:result.confidence,knowledgeMatch})
         .then((capture)=>logPhase('learning_capture',learningStartedAt,`result=${capture.captured?'captured':'skipped'}`))
         .catch((error)=>console.error(`[translation] learningCapture=failed error=${error?.name||'Error'}`));
     }
-    if(!result.fromMemory&&!result.fromKnowledge&&result.detectedLanguage!=='english'&&result.confidence>=.95){
+    if(!isDM&&!result.fromMemory&&!result.fromKnowledge&&result.detectedLanguage!=='english'&&result.confidence>=.95){
       await memoryRef.set({source:original,normalizedSource,sourceLanguage:result.detectedLanguage,targetLanguage:'english',translation:result.translation,confidence:result.confidence,trusted:true,provider:result.provider,updatedAt:FieldValue.serverTimestamp()})
         .catch((error)=>console.error(`[translation] memoryWrite=failed error=${error?.name||'Error'}`));
     }
