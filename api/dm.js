@@ -27,7 +27,7 @@ export default async function handler(request,response){
       const [self,target]=await Promise.all([db.doc(`chatMembers/${uid}`).get(),db.doc(`chatMembers/${targetUserId}`).get()]);
       if(!target.exists||!target.data().approved||target.data().status!=='approved'||target.data().banned)return response.status(404).json({error:'User is unavailable.'});
       const conversationId=conversationIdFor(uid,targetUserId),ref=db.doc(`dmConversations/${conversationId}`),participants=[uid,targetUserId].sort();
-      await db.runTransaction(async(transaction)=>{const existing=await transaction.get(ref);if(existing.exists)return;transaction.create(ref,{type:'dm',participantIds:participants,profiles:{[uid]:safeProfile(uid,self.data()||{}),[targetUserId]:safeProfile(targetUserId,target.data())},activeGeneration:1,lastMessageAt:null,lastMessagePreview:'',lastSenderId:null,createdAt:FieldValue.serverTimestamp(),updatedAt:FieldValue.serverTimestamp()});});
+      await db.runTransaction(async(transaction)=>{const existing=await transaction.get(ref);if(existing.exists){if(!existing.data().unreadCounts)transaction.update(ref,{unreadCounts:{[participants[0]]:0,[participants[1]]:0},updatedAt:FieldValue.serverTimestamp()});return;}transaction.create(ref,{type:'dm',participantIds:participants,profiles:{[uid]:safeProfile(uid,self.data()||{}),[targetUserId]:safeProfile(targetUserId,target.data())},activeGeneration:1,lastMessageAt:null,lastMessagePreview:'',lastSenderId:null,unreadCounts:{[participants[0]]:0,[participants[1]]:0},createdAt:FieldValue.serverTimestamp(),updatedAt:FieldValue.serverTimestamp()});});
       return response.status(200).json({conversationId,participant:safeProfile(targetUserId,target.data())});
     }
     if(action==='report'){

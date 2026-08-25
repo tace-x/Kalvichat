@@ -174,10 +174,18 @@ service cloud.firestore {
       allow update: if canParticipate() && request.auth.uid in resource.data.participantIds
         && request.resource.data.participantIds == resource.data.participantIds
         && request.resource.data.type == 'dm'
-        && request.resource.data.lastSenderId == request.auth.uid
-        && request.resource.data.lastMessageAt == request.time
         && request.resource.data.updatedAt == request.time
-        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['lastMessageAt','lastMessagePreview','lastSenderId','updatedAt']);
+        && (
+          (request.resource.data.lastSenderId == request.auth.uid
+            && request.resource.data.lastMessageAt == request.time
+            && request.resource.data.unreadCounts[request.auth.uid] == 0
+            && request.resource.data.get('unreadCounts', {}).get(resource.data.participantIds[0] == request.auth.uid ? resource.data.participantIds[1] : resource.data.participantIds[0], 0) == resource.data.get('unreadCounts', {}).get(resource.data.participantIds[0] == request.auth.uid ? resource.data.participantIds[1] : resource.data.participantIds[0], 0) + 1
+            && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['lastMessageAt','lastMessagePreview','lastSenderId','unreadCounts','updatedAt']))
+          ||
+          (request.resource.data.unreadCounts[request.auth.uid] == 0
+            && request.resource.data.get('unreadCounts', {}).get(resource.data.participantIds[0] == request.auth.uid ? resource.data.participantIds[1] : resource.data.participantIds[0], 0) == resource.data.get('unreadCounts', {}).get(resource.data.participantIds[0] == request.auth.uid ? resource.data.participantIds[1] : resource.data.participantIds[0], 0)
+            && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['unreadCounts','updatedAt']))
+        );
 
       match /messages/{messageId} {
         allow read: if dmParticipant(conversationId);
