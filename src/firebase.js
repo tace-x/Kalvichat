@@ -22,6 +22,7 @@ export const firebaseConfigurationPresent = Object.values(firebaseConfig).some(B
 export const firebaseEnabled = required.every((key) => Boolean(firebaseConfig[key]));
 export const firebaseConfigurationInvalid = firebaseConfigurationPresent && !firebaseEnabled;
 export const firebaseMode = firebaseEnabled ? 'firebase' : firebaseConfigurationInvalid ? 'invalid' : 'demo';
+export const firebaseProjectId = firebaseConfig.projectId || null;
 export let firebaseInitializationError = firebaseConfigurationInvalid
   ? new Error('Firebase configuration is incomplete.')
   : null;

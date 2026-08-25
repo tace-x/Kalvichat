@@ -1,10 +1,12 @@
 import { useEffect, useMemo, useState } from 'react';
 import { searchDmUsers, startDm } from '../services/authService';
 import { subscribeConversations } from '../services/dmService';
+import { firebaseProjectId } from '../firebase';
 const time=(value)=>value?new Intl.DateTimeFormat([],{hour:'numeric',minute:'2-digit'}).format(value):'';
+const conversationError=(error)=>error?.code==='permission-denied'?'Your account does not currently have permission to read private conversations.':error?.code==='unauthenticated'?'Your session expired. Please sign in again.':error?.code==='unavailable'?'Network unavailable. Private conversations will reconnect automatically.':error?.code==='failed-precondition'?'The private-message index is still building. Retry shortly.':'Private conversations are temporarily unavailable.';
 export default function DMInbox({user,onOpenGroup,onOpenConversation}){
   const[conversations,setConversations]=useState([]),[search,setSearch]=useState(''),[results,setResults]=useState([]),[busy,setBusy]=useState(false),[error,setError]=useState(''),[retryKey,setRetryKey]=useState(0);
-  useEffect(()=>subscribeConversations(user.id,(items)=>{setConversations(items);setError('');},()=>setError('Private conversations could not be loaded. Deploy the required Firestore index and retry.')),[user.id,retryKey]);
+  useEffect(()=>subscribeConversations(user.id,(items)=>{setConversations(items);setError('');},(firestoreError)=>{console.error('[dm-inbox]',{code:firestoreError?.code,name:firestoreError?.name,message:firestoreError?.message,projectId:firebaseProjectId,userSuffix:user.id.slice(-6),query:'dmConversations participantIds array-contains + lastMessageAt desc'});setError(conversationError(firestoreError));}),[user.id,retryKey]);
   useEffect(()=>{if(search.trim().length<2){setResults([]);return;}const timer=setTimeout(()=>{setBusy(true);searchDmUsers(search.trim()).then((data)=>setResults(data.users)).catch((reason)=>setError(reason.message)).finally(()=>setBusy(false));},250);return()=>clearTimeout(timer);},[search]);
   const open=async(target)=>{setBusy(true);try{const result=await startDm(target.id);onOpenConversation({id:result.conversationId,participant:result.participant});setSearch('');setResults([]);}catch(reason){setError(reason.message)}finally{setBusy(false)}};
   const rows=useMemo(()=>conversations.map((conversation)=>{const partnerId=conversation.participantIds.find((id)=>id!==user.id),partner=conversation.profiles?.[partnerId]||{id:partnerId,name:'Private user',username:'user'};return{conversation,partner};}),[conversations,user.id]);
