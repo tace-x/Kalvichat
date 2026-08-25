@@ -23,11 +23,11 @@ const persistTheme=(theme)=>{try{localStorage.setItem('kalvi-theme',theme)}catch
 
 function Icon({name}) { const icons={sun:'☼',moon:'◐',down:'↓',back:'←',send:'➤',more:'•••',reply:'↩'}; return <span aria-hidden="true">{icons[name]}</span> }
 
-const Header=memo(function Header({theme,setTheme,anyoneOnline,onLogout,onBack,title='KALVI CHAT',symbol='🤍',avatar}){
+const Header=memo(function Header({theme,setTheme,anyoneOnline,onLogout,onBack,title='KALVI CHAT',subtitle='',symbol='🤍',avatar}){
   return <header className="header glass">
     {onBack&&<button className="icon-button header-back" aria-label="Back to messages" onClick={onBack}>←</button>}
     {avatar?<img className="header-avatar" src={avatar} alt=""/>:<div className="brand-mark" aria-hidden="true">K</div>}
-    <div className="title-wrap"><h1>{title}</h1><span className="handshake">{symbol}</span></div>
+    <div className="title-wrap"><div><h1>{title}</h1>{subtitle&&<small>{subtitle}</small>}</div><span className="handshake">{symbol}</span></div>
     <div className="header-actions">{anyoneOnline&&<span className="presence-dot" title="Friends are online" />}
       <button className="icon-button" aria-label={`Switch to ${theme==='light'?'dark':'light'} mode`} onClick={()=>setTheme(theme==='light'?'dark':'light')}><Icon name={theme==='light'?'moon':'sun'}/></button>
       {onLogout&&<button className="icon-button logout-icon" aria-label="Logout" onClick={onLogout}>↪</button>}
@@ -152,7 +152,7 @@ function ReportModal({message,onClose,onSubmit}){const[reason,setReason]=useStat
 
 function UserApp(){
   const session=useSession();
-  const [theme,setTheme]=useState(initialTheme),[view,setView]=useState('inbox'),[activeConversation,setActiveConversation]=useState(null);
+  const [theme,setTheme]=useState(initialTheme),[view,setView]=useState(()=>firebaseMode==='demo'?'group':'inbox'),[activeConversation,setActiveConversation]=useState(null);
   const groupChat=useChat(view==='group'?session.user:null);
   const presence=useTypingPresence(session.user);
   const dmChat=useDM(view==='dm'?activeConversation:null,session.user,activeConversation?.participant);
@@ -175,7 +175,7 @@ function UserApp(){
   if(['pending','rejected','banned'].includes(accountStatus))return <><AccountState status={accountStatus} account={session.account||accountOverride} onLogout={askLogout} onRegisterAgain={registerAgain}/>{confirm&&<Confirm title={confirm.title} body={confirm.body} confirmLabel={confirm.label} onClose={closeConfirm} onConfirm={acceptConfirm}/>}</>;
   if(view==='inbox')return <div className="app-shell"><div className="chat-app inbox-app"><Header theme={theme} setTheme={setTheme} anyoneOnline={firebaseMode==='demo'||presence.anyoneOnline} onLogout={firebaseMode==='demo'?null:askLogout}/><DMInbox user={session.user} onOpenGroup={()=>openView('group')} onOpenConversation={(conversation)=>openView('dm',conversation)}/>{confirm&&<Confirm title={confirm.title} body={confirm.body} confirmLabel={confirm.label} onClose={closeConfirm} onConfirm={acceptConfirm}/>}</div></div>;
   const isDM=view==='dm';
-  return <div className="app-shell"><div className="chat-app"><Header theme={theme} setTheme={setTheme} anyoneOnline={firebaseMode==='demo'||presence.anyoneOnline} onLogout={firebaseMode==='demo'?null:askLogout} onBack={()=>openView('inbox')} title={isDM?activeConversation?.participant?.name:'KALVI CHAT'} symbol={isDM?'': '🤍'} avatar={isDM?activeConversation?.participant?.avatar:null}/>
+  return <div className="app-shell"><div className="chat-app"><Header theme={theme} setTheme={setTheme} anyoneOnline={firebaseMode==='demo'||presence.anyoneOnline} onLogout={firebaseMode==='demo'?null:askLogout} onBack={()=>openView('inbox')} title={isDM?activeConversation?.participant?.name:'KALVI CHAT'} subtitle={isDM?`@${activeConversation?.participant?.username||'user'}`:''} symbol={isDM?'': '🤍'} avatar={isDM?activeConversation?.participant?.avatar:null}/>
     {chat.error&&<div className="connection-toast" role="status">{chat.error}</div>}
     <History {...chat} muted={session.user.muted} currentUserId={session.user.id} onRead={chat.markRead} onReact={chat.react} onAction={showMessageActions} onNewCount={setNewCount} newCount={newCount} onBottom={bottom}/>
     <div className={`typing ${(isDM?chat.typingText:presence.typingText)?'':'typing-empty'}`} aria-live="polite">{(isDM?chat.typingText:presence.typingText)&&<><span/><span/><span/> {isDM?chat.typingText:presence.typingText}</>}</div>
