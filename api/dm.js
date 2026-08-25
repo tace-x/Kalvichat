@@ -28,7 +28,7 @@ export default async function handler(request,response){
       if(!target.exists||!target.data().approved||target.data().status!=='approved'||target.data().banned)return response.status(404).json({error:'User is unavailable.'});
       const conversationId=conversationIdFor(uid,targetUserId),ref=db.doc(`dmConversations/${conversationId}`),participants=[uid,targetUserId].sort();
       await db.runTransaction(async(transaction)=>{const existing=await transaction.get(ref);if(existing.exists){if(!existing.data().unreadCounts)transaction.update(ref,{unreadCounts:{[participants[0]]:0,[participants[1]]:0},updatedAt:FieldValue.serverTimestamp()});return;}transaction.create(ref,{type:'dm',participantIds:participants,profiles:{[uid]:safeProfile(uid,self.data()||{}),[targetUserId]:safeProfile(targetUserId,target.data())},activeGeneration:1,lastMessageAt:null,lastMessagePreview:'',lastSenderId:null,unreadCounts:{[participants[0]]:0,[participants[1]]:0},createdAt:FieldValue.serverTimestamp(),updatedAt:FieldValue.serverTimestamp()});});
-      return response.status(200).json({conversationId,participant:safeProfile(targetUserId,target.data())});
+      return response.status(200).json({conversationId,participantIds:participants,participant:safeProfile(targetUserId,target.data())});
     }
     if(action==='report'){
       const conversationId=String(request.body?.conversationId||''),messageId=String(request.body?.messageId||''),reason=String(request.body?.reason||'').trim().slice(0,500);
