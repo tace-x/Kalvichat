@@ -8,6 +8,8 @@ const GOOGLE_RETRY_TIMEOUT_MS = 3_000;
 const GOOGLE_RETRY_DELAY_MS = 120;
 const GOOGLE_RETRY_PROVIDERS = new Set(['gemma','gemini']);
 const GOOGLE_RETRY_CATEGORIES = new Set(['transient_http','rate_limited','network_error']);
+const OX_ALPHA_DEFAULT_TIMEOUT_MS = 10_000;
+const OX_ALPHA_MAX_REQUEST_CHARS = 200_000;
 const envValue=(name)=>String(process.env[name]||'').trim();
 
 export function getProviderTimeoutMs() {
@@ -20,6 +22,12 @@ export function getProviderBudgetMs() {
   const configured=Number(process.env.TRANSLATION_PROVIDER_BUDGET_MS);
   if(!Number.isFinite(configured))return DEFAULT_PROVIDER_BUDGET_MS;
   return Math.min(22_000,Math.max(8_000,Math.round(configured)));
+}
+
+export function getOxAlphaTimeoutMs() {
+  const configured=Number(process.env.TRANSLATION_OX_ALPHA_TIMEOUT_MS);
+  if(!Number.isFinite(configured))return OX_ALPHA_DEFAULT_TIMEOUT_MS;
+  return Math.min(12_000,Math.max(2_000,Math.round(configured)));
 }
 
 class ProviderError extends Error {
@@ -62,7 +70,9 @@ const modelFor=(provider)=>provider==='gemma'
     ? envValue('GEMINI_MODEL')||'gemini-3.5-flash'
     : provider==='nvidia'
       ? envValue('NVIDIA_MODEL')||'meta/llama-3.3-70b-instruct'
-      : envValue('GROQ_MODEL')||'llama-3.3-70b-versatile';
+      : provider==='ox-alpha'
+        ? 'ox-alpha'
+        : envValue('GROQ_MODEL')||'llama-3.3-70b-versatile';
 
 async function googleGenerate(provider,key,model,text,detection,timeoutMs,knowledgeContext,{jsonMode=true}={}) {
   if(!key||!model)return null;
@@ -72,11 +82,13 @@ async function googleGenerate(provider,key,model,text,detection,timeoutMs,knowle
   return parseJson((await response.json()).candidates?.[0]?.content?.parts?.[0]?.text||'');
 }
 
-async function openAICompatible({provider,key,url,model,jsonMode=true},text,detection,timeoutMs,knowledgeContext) {
+async function openAICompatible({provider,key,url,model,jsonMode=true,maxRequestChars=null,stream},text,detection,timeoutMs,knowledgeContext) {
   if(!key)return null;
-  const payload={model,temperature:0.15,messages:[{role:'user',content:promptFor(text,detection,knowledgeContext)}]};
-  if(jsonMode)payload.response_format={type:'json_object'};
-  const response=await providerFetch({provider,model,timeoutMs,url,options:{method:'POST',headers:{'content-type':'application/json',authorization:`Bearer ${key}`},body:JSON.stringify(payload)}});
+  const makePayload=(context)=>{const payload={model,temperature:0.15,messages:[{role:'user',content:promptFor(text,detection,context)}]};if(jsonMode)payload.response_format={type:'json_object'};if(stream!==undefined)payload.stream=stream;return payload;};
+  let payload=makePayload(knowledgeContext),serialized=JSON.stringify(payload);
+  if(maxRequestChars&&serialized.length>maxRequestChars&&knowledgeContext){payload=makePayload(null);serialized=JSON.stringify(payload);}
+  if(maxRequestChars&&serialized.length>maxRequestChars)throw new ProviderError(`${provider} request exceeds provider limit`,{provider,model,category:'request_too_large'});
+  const response=await providerFetch({provider,model,timeoutMs,url,options:{method:'POST',headers:{'content-type':'application/json',authorization:`Bearer ${key}`},body:serialized}});
   return parseJson((await response.json()).choices?.[0]?.message?.content||'');
 }
 
@@ -85,6 +97,7 @@ const providers={
   nvidia:(text,detection,timeoutMs,knowledgeContext)=>openAICompatible({provider:'nvidia',key:envValue('NVIDIA_API_KEY'),url:'https://integrate.api.nvidia.com/v1/chat/completions',model:modelFor('nvidia'),jsonMode:false},text,detection,timeoutMs,knowledgeContext),
   gemini:(text,detection,timeoutMs,knowledgeContext)=>googleGenerate('gemini',envValue('GEMINI_API_KEY'),modelFor('gemini'),text,detection,timeoutMs,knowledgeContext),
   groq:(text,detection,timeoutMs,knowledgeContext)=>openAICompatible({provider:'groq',key:envValue('GROQ_API_KEY'),url:'https://api.groq.com/openai/v1/chat/completions',model:modelFor('groq')},text,detection,timeoutMs,knowledgeContext),
+  'ox-alpha':(text,detection,timeoutMs,knowledgeContext)=>openAICompatible({provider:'ox-alpha',key:envValue('OX_ALPHA_API_KEY'),url:'https://oxalpha.run/api/v1/chat/completions',model:'ox-alpha',jsonMode:true,maxRequestChars:OX_ALPHA_MAX_REQUEST_CHARS,stream:false},text,detection,timeoutMs,knowledgeContext),
 };
 
 const emojiPattern=/\p{Extended_Pictographic}/gu;
@@ -116,9 +129,7 @@ async function runAttempt(provider,text,detection,timeoutMs,retry,knowledgeConte
   }
 }
 
-const providerConfigured=(provider)=>provider==='gemma'
-  ? Boolean(envValue('OPENROUTER_API_KEY'))
-  : Boolean(provider==='gemini'?envValue('GEMINI_API_KEY'):provider==='nvidia'?envValue('NVIDIA_API_KEY'):envValue('GROQ_API_KEY'));
+const providerConfigured=(provider)=>Boolean(envValue({gemma:'OPENROUTER_API_KEY',nvidia:'NVIDIA_API_KEY',gemini:'GEMINI_API_KEY',groq:'GROQ_API_KEY','ox-alpha':'OX_ALPHA_API_KEY'}[provider]));
 
 export async function diagnoseProvider(provider,text,detection) {
   if(!providers[provider]||!providerConfigured(provider))throw new ProviderError(`${provider} is not fully configured`,{provider,model:modelFor(provider)||'missing',category:'configuration_missing'});
@@ -129,19 +140,21 @@ export async function diagnoseProvider(provider,text,detection) {
 
 export async function routeTranslation(text,detection,knowledgeContext=null) {
   if(!envValue('OPENROUTER_API_KEY')&&envValue('GEMMA_MODEL'))console.error('[translation] provider=gemma model=missing_key error=configuration_missing');
-  const order=['gemma','nvidia','gemini','groq'].filter(providerConfigured);
+  const order=['gemma','nvidia','gemini','groq','ox-alpha'].filter(providerConfigured);
   const startedAt=Date.now(),providerTimeout=getProviderTimeoutMs(),budget=getProviderBudgetMs();
   console.info(`[translation] provider=router model=none result=start budgetMs=${budget} timeoutMs=${providerTimeout} configured=${order.join(',')||'none'}`);
   let lastError;
 
   for(let index=0;index<order.length;index++){
-    const provider=order[index],laterProviders=order.length-index-1;
+    const provider=order[index];
     let remaining=budget-(Date.now()-startedAt);
     if(remaining<MIN_ATTEMPT_WINDOW_MS)break;
-    const reservedForFallback=laterProviders*RESERVED_FALLBACK_WINDOW_MS;
+    // Optional Ox Alpha uses only leftover budget and must not reduce the existing chain's allocation.
+    const reservedForFallback=order.slice(index+1).filter((name)=>name!=='ox-alpha').length*RESERVED_FALLBACK_WINDOW_MS;
     const attemptWindow=Math.max(MIN_ATTEMPT_WINDOW_MS,remaining-reservedForFallback);
+    const configuredAttemptTimeout=provider==='ox-alpha'?getOxAlphaTimeoutMs():providerTimeout;
     try{
-      const attempt=await runAttempt(provider,text,detection,Math.min(providerTimeout,attemptWindow),0,knowledgeContext);
+      const attempt=await runAttempt(provider,text,detection,Math.min(configuredAttemptTimeout,attemptWindow),0,knowledgeContext);
       if(attempt.missing)continue;
       return{...attempt.result,confidence:Math.max(0,Math.min(1,Number(attempt.result.confidence)||0)),provider};
     }catch(error){
