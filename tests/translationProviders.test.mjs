@@ -2,19 +2,21 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 const detection={detectedLanguage:'manglish',confidence:.82,shouldTranslate:true};
-const providerName=(url)=>url.includes('openrouter.ai')?'gemma':url.includes('googleapis.com')?'gemini':url.includes('nvidia.com')?'nvidia':'groq';
+const providerName=(url)=>url.includes('oxalpha.run')?'ox-alpha':url.includes('openrouter.ai')?'gemma':url.includes('googleapis.com')?'gemini':url.includes('nvidia.com')?'nvidia':'groq';
 const payload=(provider)=>provider==='gemini'
   ? {candidates:[{content:{parts:[{text:JSON.stringify({detectedLanguage:'manglish',translation:'How are you?',confidence:.99})}]}}]}
   : {choices:[{message:{content:JSON.stringify({detectedLanguage:'manglish',translation:'How are you?',confidence:.99})}}]};
 const response=(provider,status=200)=>({ok:status>=200&&status<300,status,json:async()=>payload(provider)});
 
 let sequence=0;
-async function loadRouter({gemma=false,gemmaModel='google/gemma-4-31b-it:free',gemini=true,nvidia=true,groq=true,timeout=10000,budget=18000}={}){
+async function loadRouter({gemma=false,gemmaModel='google/gemma-4-31b-it:free',gemini=true,nvidia=true,groq=true,ox=false,timeout=10000,budget=18000,oxTimeout=10000}={}){
   process.env.OPENROUTER_API_KEY=gemma?'openrouter-secret-for-test':'';
   process.env.GEMMA_MODEL=gemma?gemmaModel:'';
   process.env.GEMINI_API_KEY=gemini?'gemini-secret-for-test':'';
   process.env.NVIDIA_API_KEY=nvidia?'nvidia-secret-for-test':'';
   process.env.GROQ_API_KEY=groq?'groq-secret-for-test':'';
+  process.env.OX_ALPHA_API_KEY=ox?'ox-secret-for-test':'';
+  process.env.TRANSLATION_OX_ALPHA_TIMEOUT_MS=String(oxTimeout);
   process.env.TRANSLATION_PROVIDER_TIMEOUT_MS=String(timeout);
   process.env.TRANSLATION_PROVIDER_BUDGET_MS=String(budget);
   return import(`../server/translationProviders.js?test=${sequence++}`);
@@ -118,6 +120,24 @@ test('NVIDIA timeout falls back to Groq',async()=>{
   assert.equal(value.provider,'groq');assert.deepEqual(calls,['nvidia','groq']);
 });
 
+test('Ox Alpha uses the correct endpoint, model, authorization and non-streaming JSON request',async()=>{
+  const {routeTranslation,getOxAlphaTimeoutMs}=await loadRouter({gemini:false,nvidia:false,groq:false,ox:true});assert.equal(getOxAlphaTimeoutMs(),10000);let call;
+  globalThis.fetch=async(url,options)=>{call={url:String(url),options,payload:JSON.parse(options.body)};return response('ox-alpha')};
+  const {value}=await captureLogs(()=>routeTranslation('sughamaano?',detection));assert.equal(value.provider,'ox-alpha');assert.equal(call.url,'https://oxalpha.run/api/v1/chat/completions');assert.equal(call.options.headers.authorization,'Bearer ox-secret-for-test');assert.equal(call.payload.model,'ox-alpha');assert.equal(call.payload.stream,false);assert.equal(call.payload.response_format.type,'json_object');
+});
+
+test('Ox Alpha is the final fallback after existing providers fail',async()=>{
+  const {routeTranslation}=await loadRouter({gemma:true,groq:false,ox:true});const calls=[];globalThis.fetch=async(url)=>{const provider=providerName(String(url));calls.push(provider);return response(provider,provider==='ox-alpha'?200:503)};const {value}=await captureLogs(()=>routeTranslation('sughamaano?',detection));assert.equal(value.provider,'ox-alpha');assert.equal(calls.at(-1),'ox-alpha');assert.ok(calls.includes('gemma')&&calls.includes('nvidia')&&calls.includes('gemini'));
+});
+
+test('Ox Alpha handles empty output, 429, 5xx and timeout as provider failures',async()=>{
+  for(const scenario of ['empty','429','503','timeout']){const {routeTranslation}=await loadRouter({gemini:false,nvidia:false,groq:false,ox:true});globalThis.fetch=async()=>{if(scenario==='timeout')throw new DOMException('timeout','TimeoutError');if(scenario==='empty')return{ok:true,status:200,json:async()=>({choices:[{message:{content:''}}]})};return response('ox-alpha',Number(scenario))};const {logs}=await captureLogs(async()=>assert.rejects(()=>routeTranslation('sughamaano?',detection)));assert.match(logs.join('\n'),scenario==='429'?/rate_limited/:scenario==='503'?/transient_http/:scenario==='timeout'?/timeout/:/invalid_response/);}
+});
+
+test('Ox Alpha removes optional knowledge context before enforcing request-size limit',async()=>{
+  const {routeTranslation}=await loadRouter({gemini:false,nvidia:false,groq:false,ox:true});let body;globalThis.fetch=async(_url,options)=>{body=options.body;return response('ox-alpha')};const result=await captureLogs(()=>routeTranslation('sughamaano?',detection,{possibleMeanings:['x'.repeat(210000)]}));assert.equal(result.value.provider,'ox-alpha');assert.ok(body.length<200000);assert.match(body,/sughamaano/);
+});
+
 test('missing keys are skipped and all missing fails quickly',async()=>{
   let module=await loadRouter({gemini:false,nvidia:true,groq:false});let calls=[];
   globalThis.fetch=async(url)=>{const provider=providerName(String(url));calls.push(provider);return response(provider)};
@@ -154,5 +174,5 @@ test('fresh request still attempts providers after previous request exhausts all
 test('diagnostics never contain API keys',async()=>{
   const {routeTranslation}=await loadRouter();globalThis.fetch=async(url)=>response(providerName(String(url)),503);
   const {logs}=await captureLogs(async()=>{await assert.rejects(()=>routeTranslation('sughamaano?',detection));});
-  const output=logs.join('\n');for(const secret of ['openrouter-secret-for-test','gemini-secret-for-test','nvidia-secret-for-test','groq-secret-for-test'])assert.equal(output.includes(secret),false);
+  const output=logs.join('\n');for(const secret of ['openrouter-secret-for-test','gemini-secret-for-test','nvidia-secret-for-test','groq-secret-for-test','ox-secret-for-test'])assert.equal(output.includes(secret),false);
 });
