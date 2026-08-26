@@ -117,7 +117,7 @@ export default async function handler(request, response) {
     if(!applied){outcome='stale';return response.status(409).json({error:'Message is no longer active'});}
     settled=true;outcome=update.translationStatus;
 
-    const aiProvider=['gemma','nvidia','gemini','groq'].includes(result.provider);
+    const aiProvider=['gemma','nvidia','gemini','groq','ox-alpha'].includes(result.provider);
     if(aiProvider&&!isDM){
       const learningStartedAt=Date.now();
       await captureLearning(db,{source:original,normalizedSource,language:result.detectedLanguage,translation:result.translation,provider:result.provider,confidence:result.confidence,knowledgeMatch})
